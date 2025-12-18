@@ -382,24 +382,26 @@
             margin-bottom: 20px;
         }
 
+        /* Novo estilo para o input e botão da localização base */
         .base-location-input-group {
             display: flex;
             gap: 10px;
-            margin-bottom: 10px;
+            margin-bottom: 15px; /* Espaço abaixo do grupo */
         }
 
         .base-location-input-group input {
-            flex: 1;
+            flex: 1; /* O input ocupa o espaço disponível */
         }
 
         .base-location-input-group button {
-            white-space: nowrap;
+            white-space: nowrap; /* Evita quebra de linha no texto do botão */
         }
 
         .base-location-display {
             font-size: 14px;
             color: #555;
             text-align: center;
+            margin-top: 10px; /* Espaço acima da exibição da localização */
         }
     </style>
 </head>
@@ -422,10 +424,12 @@
             <h3 style="margin-bottom: 10px; color: #333;">Localização Base</h3>
             <p style="margin-bottom: 15px; font-size: 14px; color: #555;">Defina a cidade/região onde você deseja adicionar os endereços.</p>
 
+            <!-- Grupo input e botão na mesma linha -->
             <div class="base-location-input-group">
                 <input type="text" id="base-location-input" placeholder="Ex: São Paulo, SP">
                 <button class="btn btn-primary" onclick="setBaseLocation()">Definir</button>
             </div>
+
             <div id="base-location-display" class="base-location-display">
                 Nenhuma localização base definida. Por favor, defina para continuar.
             </div>
@@ -590,7 +594,6 @@
                         throw new Error('CEP inválido');
                     }
                     // --- Correção: Adiciona explicitamente a cidade e estado da base ---
-                    // O ViaCEP fornece localidade e uf. Mesmo assim, adicionamos a base definida pelo usuário para consistência.
                     text = `${data.logradouro || ''} ${numero ? ' ' + numero : ''}, ${data.bairro || ''}, ${userLocation.city}, ${userLocation.state}`;
                     // --- Fim da Correção ---
                     showStatus('Endereço encontrado: ' + text, 'success');
@@ -841,7 +844,7 @@
                 );
                 const cleanedText = text.trim().replace(/\n/g, ' ');
                 document.getElementById('address-input').value = cleanedText;
-                addAddress(); // Chama addAddress que verifica a base e corrige o CEP
+                addAddress(); // Chama addAddress que verifica a base
                 showStatus('Texto extraído: ' + cleanedText, 'success');
             } catch (err) { // Início do bloco catch
                 console.error("Erro no OCR:", err); // Adiciona log do erro
@@ -850,7 +853,6 @@
 
             stopCamera(); // Esta linha deve estar fora do try...catch
         }
-
         function stopCamera() {
             if (cameraStream) {
                 cameraStream.getTracks().forEach(track => track.stop());
@@ -867,16 +869,22 @@
             showStatus('Código escaneado: ' + code, 'success');
         }
 
+        // --- Função de Cálculo de Distância (atual: Linear, Aproximada) ---
+        // ATENÇÃO: Esta função calcula a DISTÂNCIA LINEAR (em linha reta) entre dois pontos.
+        // Ela NÃO considera ruas, trânsito ou velocidade real.
+        // Para uma rota MAIS RÁPIDA ou MAIS CURTA por estrada, é necessária uma API externa.
         function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371;
+            const R = 6371; // Raio da Terra em km
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
                       Math.sin(dLon/2) * Math.sin(dLon/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
+            return R * c; // Retorna a distância em km
         }
+        // --- Fim da Função de Cálculo de Distância ---
+
 
         // Função auxiliar para verificar se a cidade do resultado bate com a base definida
         function matchesBaseCity(result_address, base_city) {
@@ -933,6 +941,10 @@
             }
         }
 
+        // --- Função de Otimização da Rota (atual: Vizinho Mais Próximo baseado em distância linear) ---
+        // ATENÇÃO: Este algoritmo otimiza com base na DISTÂNCIA LINEAR entre os pontos.
+        // Ele NÃO considera o tempo real de trânsito ou a distância por estrada.
+        // Para otimização realista (mais rápido ou mais curto por estrada), é necessária uma API externa.
         async function optimizeRoute() {
             if (!userLocation || !userLocation.city) {
                  showStatus('Por favor, defina uma localização base primeiro.', 'warning');
@@ -986,6 +998,7 @@
                     route.push(current);
                     let remaining = validAddresses.slice(1);
 
+                    // Algoritmo: Vizinho Mais Próximo baseado em distância linear
                     while (remaining.length > 0) {
                         let nearest = null;
                         let minDist = Infinity;
@@ -1023,6 +1036,8 @@
                 btn.textContent = '▶ Otimizar Rota'; // Restaura o texto em caso de erro
             }
         }
+        // --- Fim da Função de Otimização da Rota ---
+
 
         function renderRoute() {
             const list = document.getElementById('route-list');
