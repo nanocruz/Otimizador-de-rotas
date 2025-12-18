@@ -10,7 +10,7 @@
     <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
     <style>
-        /* Estilos permanecem os mesmos */
+        /* Estilos permanecem os mesmos, com ajustes para responsividade */
         * {
             margin: 0;
             padding: 0;
@@ -23,11 +23,19 @@
             min-height: 100vh;
             padding: 20px;
             padding-bottom: 40px;
+            /* Ajuste para responsividade: Garantir altura mínima e overflow visível */
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .container {
-            max-width: 600px;
+            max-width: 100%; /* Permitir que ocupe 100% da largura disponível */
+            width: 100%;
+            /* max-width: 600px; Mantido para telas maiores */
             margin: 0 auto;
+            padding: 0 10px; /* Adiciona padding lateral para telas pequenas */
         }
 
         .header {
@@ -170,6 +178,33 @@
         .btn-optimize:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+
+        /* Novo estilo para o botão "OK" / "✅" */
+        .btn-ok {
+            /* Herda estilos básicos do .btn */
+            /* padding: 15px 25px; Ajustado para ser menor */
+            padding: 10px 15px; /* Tamanho reduzido */
+            /* border-radius: 10px; */
+            font-size: 14px; /* Tamanho da fonte reduzido */
+            /* font-weight: 600; */
+            /* cursor: pointer; */
+            /* transition: all 0.3s; */
+            /* display: flex; */
+            /* align-items: center; */
+            /* justify-content: center; */
+            /* gap: 8px; */
+            /* Ajustes específicos */
+            background: #4CAF50; /* Cor verde para OK */
+            color: white;
+            border: none;
+            border-radius: 8px; /* Borda levemente arredondada */
+            min-width: 60px; /* Largura mínima para consistência */
+            flex-shrink: 0; /* Não encolhe mais que o necessário */
+        }
+
+        .btn-ok:hover {
+            background: #45a049; /* Cor levemente mais escura no hover */
         }
 
         .btn-small {
@@ -382,26 +417,26 @@
             margin-bottom: 20px;
         }
 
-        /* Novo estilo para o input e botão da localização base */
+        /* Ajuste para o input e botão da localização base */
         .base-location-input-group {
             display: flex;
             gap: 10px;
-            margin-bottom: 15px; /* Espaço abaixo do grupo */
+            margin-bottom: 15px;
         }
 
         .base-location-input-group input {
             flex: 1; /* O input ocupa o espaço disponível */
         }
 
-        .base-location-input-group button {
-            white-space: nowrap; /* Evita quebra de linha no texto do botão */
-        }
+        /* .base-location-input-group button { Removido estilo antigo */
+        /* white-space: nowrap; */
+        /* } */
 
         .base-location-display {
             font-size: 14px;
             color: #555;
             text-align: center;
-            margin-top: 10px; /* Espaço acima da exibição da localização */
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -427,7 +462,8 @@
             <!-- Grupo input e botão na mesma linha -->
             <div class="base-location-input-group">
                 <input type="text" id="base-location-input" placeholder="Ex: São Paulo, SP">
-                <button class="btn btn-primary" onclick="setBaseLocation()">Definir</button>
+                <!-- Botão alterado para ter texto "✅" e classe específica -->
+                <button class="btn btn-ok" onclick="setBaseLocation()">✅</button>
             </div>
 
             <div id="base-location-display" class="base-location-display">
