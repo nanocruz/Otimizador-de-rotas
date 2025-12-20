@@ -697,7 +697,7 @@
                 ];
 
                 // Chamar ORS
-                const ORS_API_KEY = 'your_actual_ors_api_key_here'; // ⚠️ Substitua por sua chave real! Obtenha em openrouteservice.org
+                const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjMwMDczZTM3YmQ2NTRkOWVhZTAyMWYxOWY5NDFhY2EyIiwiaCI6Im11cm11cjY0In0='; 
                 const resp = await fetch('https://api.openrouteservice.org/v2/directions/driving-car', {
                     method: 'POST',
                     headers: { 'Authorization': ORS_API_KEY, 'Content-Type': 'application/json' },
