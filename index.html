@@ -483,33 +483,37 @@
             geocodeBaseLocation(locationText);
         }
 
-        async function geocodeBaseLocation(locationText) {
-            showStatus('Verificando localização base...', 'info');
-            try {
-                const response = await fetch(
-                    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}, Brasil&limit=1&addressdetails=1&accept-language=pt-BR`,
-                    { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' }}
-                );
-                const data = await response.json();
-                if (data?.length > 0) {
-                    const addr = data[0].address || {};
-                    const city = addr.city || addr.town || addr.municipality || addr.village || '';
-                    const state = addr.state || '';
-                    if (city) {
-                        userLocation = { city, state };
-                        document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
-                        document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 (em ${city})`;
-                        document.getElementById('departure-section').style.display = 'block';
-                        showStatus(`Localização base definida: ${city}${state ? ', ' + state : ''}`, 'success');
-                    } else throw new Error('Cidade não identificada.');
-                } else throw new Error('Nenhum resultado encontrado.');
-            } catch (error) {
-                console.error('Erro na localização base:', error);
-                showStatus('Erro: ' + error.message, 'warning');
-                userLocation = null;
+async function geocodeBaseLocation(locationText) {
+    showStatus('Verificando localização base...', 'info');
+    try {
+        const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}, Brasil&limit=1&addressdetails=1&accept-language=pt-BR`,
+            { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' }}
+        );
+        const data = await response.json();
+        if (data?.length > 0) {
+            const addr = data[0].address || {};
+            const city = addr.city || addr.town || addr.municipality || addr.village || '';
+            const state = addr.state || '';
+            if (city) {
+                userLocation = { city, state };
+                document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
+                document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 (em ${city})`;
+                document.getElementById('departure-section').style.display = 'block';
+                showStatus(`Localização base definida: ${city}${state ? ', ' + state : ''}`, 'success');
+            } else {
+                throw new Error('Cidade não identificada.');
             }
+        } else {
+            throw new Error('Nenhum resultado encontrado.');
         }
-
+    } catch (error) {
+        console.error("Erro ao geocodificar localização base:", error);
+        showStatus('Erro: ' + error.message, 'warning');
+        userLocation = null;
+        document.getElementById('base-location-display').textContent = 'Falha ao definir localização base.';
+    }
+}
         // === Ponto de Partida ===
         async function setDepartureAddress() {
             const input = document.getElementById('departure-input');
@@ -948,6 +952,6 @@
             c.innerHTML = `<div class="status-bar ${cls}">${message}</div>`;
             if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
         }
-    </script>
+</script>
 </body>
 </html>
