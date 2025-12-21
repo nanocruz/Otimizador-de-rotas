@@ -465,13 +465,19 @@
         let isPhotoMode = false;
 
         // Inicialização
+        // Inicialização
         window.onload = () => {
             document.getElementById('address-input').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') addAddress();
             });
+            document.getElementById('base-location-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') setBaseLocation();
+            });
+            document.getElementById('departure-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') setDepartureAddress();
+            });
             document.getElementById('address-input').placeholder = 'Ex: Av. Paulista, 1578, São Paulo, SP';
         };
-
         // === Localização Base ===
         function setBaseLocation() {
             const input = document.getElementById('base-location-input');
