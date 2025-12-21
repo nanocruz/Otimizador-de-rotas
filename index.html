@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -470,6 +469,15 @@
             document.getElementById('address-input').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') addAddress();
             });
+            document.getElementById('base-location-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setBaseLocation();
+                }
+            });
+            document.getElementById('departure-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') setDepartureAddress();
+            });
             document.getElementById('address-input').placeholder = 'Ex: Av. Paulista, 1578, São Paulo, SP';
         };
 
@@ -489,30 +497,32 @@
             try {
                 const response = await fetch(
                     `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}, Brasil&limit=1&addressdetails=1&accept-language=pt-BR`,
-                    { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' }}
+                    { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
                 );
                 const data = await response.json();
-                if (data?.length > 0) {
-                    const addr = data[0].address || {};
-                    const city = addr.city || addr.town || addr.municipality || addr.village || '';
-                    const state = addr.state || '';
-                    if (city) {
-                        userLocation = { city, state };
-                        document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
-                        document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 (em ${city})`;
-                        document.getElementById('departure-section').style.display = 'block';
-                        showStatus(`Localização base definida: ${city}${state ? ', ' + state : ''}`, 'success');
-                    } else {
-                        throw new Error('Cidade não identificada.');
-                    }
-                } else {
-                    throw new Error('Nenhum resultado encontrado.');
+
+                if (!data || data.length === 0) {
+                    throw new Error('Nenhum resultado encontrado. Tente: "Cidade, Estado" (ex: São Paulo, SP)');
                 }
+
+                const addr = data[0].address || {};
+                const city = addr.city || addr.town || addr.municipality || addr.village || '';
+                const state = addr.state || '';
+
+                if (!city) {
+                    throw new Error('Cidade não identificada nos resultados.');
+                }
+
+                userLocation = { city, state };
+                document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
+                document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 (em ${city})`;
+                document.getElementById('departure-section').style.display = 'block';
+                showStatus(`✅ Localização base: ${city}${state ? ', ' + state : ''}`, 'success');
             } catch (error) {
                 console.error("Erro ao geocodificar localização base:", error);
-                showStatus('Erro: ' + error.message, 'warning');
+                showStatus(`❌ ${error.message}`, 'warning');
                 userLocation = null;
-                document.getElementById('base-location-display').textContent = 'Falha ao definir localização base.';
+                document.getElementById('base-location-display').textContent = 'Falha ao definir localização base. Tente novamente.';
             }
         }
 
@@ -544,7 +554,7 @@
                     try {
                         const resp = await fetch(
                             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=pt-BR`,
-                            { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' }}
+                            { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
                         );
                         const data = await resp.json();
                         const name = data.display_name || `Lat: ${latitude}, Lng: ${longitude}`;
@@ -586,42 +596,30 @@
                     const data = await resp.json();
                     if (data.erro) throw new Error('CEP inválido');
                     text = `${data.logradouro || ''}${numero ? ', ' + numero : ''}${data.bairro ? ' - ' + data.bairro : ''}, ${data.localidade} - ${data.uf}`;
-                    showStatus('Endereço resolvido: ' + text, 'success');
+
+                    showStatus('Localizando endereço...', 'info');
+                    const coords = await geocodeAddressFull(text);
+                    if (coords) {
+                        addresses.push({ id: Date.now(), text, coords, completed: false });
+                        input.value = '';
+                        renderAddressList();
+                        if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
+                        showStatus('✅ Endereço adicionado!', 'success');
+                        return;
+                    } else {
+                        throw new Error('Não foi possível localizar o endereço');
+                    }
                 } catch (e) {
                     showStatus('Erro no CEP: ' + e.message, 'warning');
                     return;
                 }
             }
 
+            // Se não for CEP, adiciona normalmente (geocodifica depois)
             addresses.push({ id: Date.now(), text, completed: false });
             input.value = '';
             renderAddressList();
             if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
-        }
-
-        async function addUserLocationManually() {
-            if (!userLocation) return showStatus('Defina localização base primeiro.', 'warning');
-            if (!navigator.geolocation) return showStatus('Geolocalização não suportada.', 'warning');
-
-            navigator.geolocation.getCurrentPosition(
-                async (pos) => {
-                    const { lat, lon } = pos.coords;
-                    let name = `Minha posição (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
-                    try {
-                        const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=pt-BR`, {
-                            headers: { 'User-Agent': 'RouteOptimizerApp/1.0' }
-                        });
-                        const data = await resp.json();
-                        name = data.display_name || name;
-                    } catch (e) { console.warn('Falha ao nomear localização'); }
-                    addresses.unshift({ id: Date.now(), text: 'Minha posição', coords: { lat, lon, display_name: name }, completed: false });
-                    renderAddressList();
-                    document.getElementById('optimize-btn').style.display = 'block';
-                    showStatus('Posição adicionada como parada.', 'success');
-                },
-                (err) => showStatus('Erro ao obter posição: ' + err.message, 'warning'),
-                { timeout: 10000 }
-            );
         }
 
         function removeAddress(id) {
@@ -650,7 +648,7 @@
                 }
                 const resp = await fetch(
                     `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&accept-language=pt-BR`,
-                    { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' }}
+                    { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
                 );
                 const data = await resp.json();
                 if (data?.length > 0) {
@@ -664,76 +662,204 @@
             return null;
         }
 
-        // === Otimização com OpenRouteService ===
-async function optimizeRoute() {
-  if (!departure || addresses.length === 0) {
-    return showStatus('Defina partida e destinos.', 'warning');
-  }
+        // === Cache de distâncias ===
+        const distanceCache = new Map();
 
-  const btn = document.getElementById('optimize-btn');
-  btn.disabled = true;
-  btn.textContent = '⏳ Otimizando...';
+        function getCacheKey(lat1, lon1, lat2, lon2) {
+            return `${lat1.toFixed(5)},${lon1.toFixed(5)}-${lat2.toFixed(5)},${lon2.toFixed(5)}`;
+        }
 
-  try {
-    const destinos = [];
+        // === Calcular distância real com OSRM (API gratuita) ===
+        async function calculateRealDistance(from, to) {
+            const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
+            if (distanceCache.has(key)) return distanceCache.get(key);
 
-    for (let i = 0; i < addresses.length; i++) {
-      showStatus(`Geocodificando ${i + 1}/${addresses.length}`, 'info');
-      const coords = addresses[i].coords || await geocodeAddressCached(addresses[i].text);
-      if (coords) destinos.push({ ...addresses[i], coords });
-      await delay(1000);
-    }
+            try {
+                const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
+                const resp = await fetch(url);
+                const data = await resp.json();
 
-    if (!destinos.length) throw new Error('Nenhum destino válido');
+                if (data.code === 'Ok' && data.routes?.length > 0) {
+                    const distance = data.routes[0].distance; // metros
+                    const duration = data.routes[0].duration; // segundos
+                    const result = { distance, duration };
+                    distanceCache.set(key, result);
+                    return result;
+                }
+            } catch (e) {
+                console.warn('OSRM falhou, usando Haversine', e);
+            }
 
-    const jobs = destinos.map((a, i) => ({
-      id: i + 1,
-      location: [a.coords.lon, a.coords.lat]
-    }));
+            // Fallback: distância euclidiana (Haversine)
+            const R = 6371000; // raio da Terra em metros
+            const φ1 = from.lat * Math.PI / 180;
+            const φ2 = to.lat * Math.PI / 180;
+            const Δφ = (to.lat - from.lat) * Math.PI / 180;
+            const Δλ = (to.lon - from.lon) * Math.PI / 180;
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            const distance = R * c;
+            const duration = distance / 13.89; // ~50 km/h médio
+            const result = { distance, duration };
+            distanceCache.set(key, result);
+            return result;
+        }
 
-    const vehicles = [{
-      id: 1,
-      start: [departure.coords.lon, departure.coords.lat]
-    }];
+        // === Algoritmo de otimização: Nearest Neighbor melhorado ===
+        async function optimizeRouteNearestNeighbor(start, destinations) {
+            const route = [];
+            const remaining = [...destinations];
+            let current = start;
 
-    const resp = await fetch('https://SEU-WORKER.cloudflareworkers.dev', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobs, vehicles, optimize: true })
-    });
+            while (remaining.length > 0) {
+                let nearest = null;
+                let minDist = Infinity;
+                let minIndex = -1;
 
-    if (!resp.ok) throw new Error('Falha na otimização');
+                for (let i = 0; i < remaining.length; i++) {
+                    const dest = remaining[i];
+                    const { distance } = await calculateRealDistance(current.coords, dest.coords);
+                    if (distance < minDist) {
+                        minDist = distance;
+                        nearest = dest;
+                        minIndex = i;
+                    }
+                }
 
-    const data = await resp.json();
+                if (nearest) {
+                    route.push(nearest);
+                    remaining.splice(minIndex, 1);
+                    current = nearest;
+                }
+            }
 
-    const ordem = data.routes[0].steps
-      .filter(s => s.type === 'job')
-      .map(s => destinos[s.job - 1]);
+            return route;
+        }
 
-    optimizedRoute = [departure, ...ordem];
-    activeIndex = 0;
+        // === 2-opt optimization (melhoria local) ===
+        async function twoOptImprovement(route, start) {
+            let improved = true;
+            let currentRoute = [...route];
 
-    renderRoute();
-    showStatus('Rota otimizada com sucesso!', 'success');
+            while (improved) {
+                improved = false;
+                for (let i = 0; i < currentRoute.length - 1; i++) {
+                    for (let j = i + 2; j < currentRoute.length; j++) {
+                        const prev_i = i === 0 ? start : currentRoute[i - 1];
+                        const prev_j = j === 0 ? start : currentRoute[j - 1];
 
-  } catch (e) {
-    console.warn('Fallback ativado', e);
-    optimizedRoute = nearestNeighborFallback();
-    renderRoute();
-    showStatus('Usando otimização local.', 'info');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '▶ Otimizar Rota';
-  }
-}
+                        const dist1 = await calculateRealDistance(prev_i.coords, currentRoute[i].coords);
+                        const dist2 = await calculateRealDistance(currentRoute[j - 1].coords, currentRoute[j].coords);
+                        const currentDist = dist1.distance + dist2.distance;
+
+                        const dist3 = await calculateRealDistance(prev_i.coords, currentRoute[j].coords);
+                        const dist4 = await calculateRealDistance(currentRoute[i].coords, currentRoute[j - 1].coords);
+                        const newDist = dist3.distance + dist4.distance;
+
+                        if (newDist < currentDist) {
+                            const segment = currentRoute.slice(i, j + 1).reverse();
+                            currentRoute = [...currentRoute.slice(0, i), ...segment, ...currentRoute.slice(j + 1)];
+                            improved = true;
+                        }
+                    }
+                }
+            }
+
+            return currentRoute;
+        }
+
+        // === Otimização Principal ===
+        async function optimizeRoute() {
+            if (!departure || addresses.length === 0) {
+                return showStatus('Defina partida e destinos.', 'warning');
+            }
+
+            const btn = document.getElementById('optimize-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Otimizando...';
+
+            try {
+                // 1. Geocodificar endereços
+                const destinos = [];
+                for (let i = 0; i < addresses.length; i++) {
+                    showStatus(`Preparando ${i + 1}/${addresses.length}...`, 'info');
+                    const coords = addresses[i].coords || await geocodeAddressFull(addresses[i].text);
+                    if (coords) {
+                        destinos.push({ ...addresses[i], coords });
+                    }
+                    await delay(500);
+                }
+
+                if (!destinos.length) throw new Error('Nenhum destino válido');
+
+                // 2. Otimização com Nearest Neighbor
+                showStatus('Calculando melhor rota...', 'info');
+                let optimized = await optimizeRouteNearestNeighbor(departure, destinos);
+
+                // 3. Melhorar com 2-opt (apenas se tiver mais de 3 destinos)
+                if (optimized.length > 3) {
+                    showStatus('Refinando rota...', 'info');
+                    optimized = await twoOptImprovement(optimized, departure);
+                }
+
+                // 4. Calcular estatísticas
+                let totalDistance = 0;
+                let totalDuration = 0;
+                let prev = departure;
+                for (const dest of optimized) {
+                    const { distance, duration } = await calculateRealDistance(prev.coords, dest.coords);
+                    totalDistance += distance;
+                    totalDuration += duration;
+                    prev = dest;
+                }
+
+                optimizedRoute = [departure, ...optimized];
+                activeIndex = 0;
+
+                document.getElementById('add-section').style.display = 'none';
+                document.getElementById('route-section').style.display = 'block';
+                renderRoute();
+
+                const distKm = (totalDistance / 1000).toFixed(1);
+                const durMin = Math.round(totalDuration / 60);
+                showStatus(`✅ Rota otimizada! ${distKm}km · ~${durMin}min`, 'success');
+
+            } catch (e) {
+                console.error('Erro na otimização:', e);
+                showStatus('Erro: ' + e.message, 'warning');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '▶ Otimizar Rota';
+            }
+        }
+
+        function delay(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
 
         // === Renderização e Navegação ===
-        function renderRoute() {
+        async function renderRoute() {
             const list = document.getElementById('route-list');
-            list.innerHTML = optimizedRoute.map((a, i) => {
+
+            // Calcular estatísticas em tempo real
+            let html = '';
+            for (let i = 0; i < optimizedRoute.length; i++) {
+                const a = optimizedRoute[i];
                 const ativo = i === activeIndex && !a.completed;
                 const concluido = a.completed;
-                return `
+
+                let distInfo = '';
+                if (i > 0) {
+                    const prev = optimizedRoute[i - 1];
+                    const { distance, duration } = await calculateRealDistance(prev.coords, a.coords);
+                    const km = (distance / 1000).toFixed(1);
+                    const min = Math.round(duration / 60);
+                    distInfo = `<small style="color: #667eea;">📍 ${km}km · ⏱️ ${min}min do anterior</small>`;
+                }
+
+                html += `
                     <div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
                         <div class="route-header">
                             <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
@@ -742,6 +868,7 @@ async function optimizeRoute() {
                             <div class="route-text">
                                 <strong>${a.text}</strong>
                                 ${a.coords ? `<small>${a.coords.display_name}</small>` : ''}
+                                ${distInfo}
                             </div>
                         </div>
                         ${ativo && !concluido ? `
@@ -753,7 +880,9 @@ async function optimizeRoute() {
                         ` : ''}
                     </div>
                 `;
-            }).join('');
+            }
+
+            list.innerHTML = html;
             updateProgress();
         }
 
@@ -803,6 +932,7 @@ async function optimizeRoute() {
             activeIndex = 0;
             addresses = [];
             departure = null;
+            distanceCache.clear(); // Limpar cache
             document.getElementById('base-location-section').style.display = 'block';
             document.getElementById('departure-section').style.display = 'none';
             document.getElementById('add-section').style.display = 'block';
@@ -813,7 +943,7 @@ async function optimizeRoute() {
             document.getElementById('departure-display').textContent = 'Nenhum ponto de partida definido.';
         }
 
-        // === Voice, Camera, etc (sem alterações críticas) ===
+        // === Voice, Camera, etc ===
         function requestVoicePermissionAndStart() {
             if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
                 return showStatus('Voz não suportada.', 'warning');
