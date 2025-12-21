@@ -583,8 +583,8 @@
             let text = input.value.trim();
             if (!text) return;
 
-            // Tratar CEP
-            const cepMatch = text.match(/^(\d{5}-?\d{3})(?:,\s*(\d+))?$/);
+            // Tratar CEP com regex mais flexível
+            const cepMatch = text.match(/^\s*(?:cep\s*)?(\d{5}-?\d{3})(?:,\s*(\d+))?\s*$/i);
             if (cepMatch) {
                 const cep = cepMatch[1].replace('-', '');
                 const numero = cepMatch[2] || '';
@@ -593,22 +593,25 @@
                     const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
                     const data = await resp.json();
                     if (data.erro) throw new Error('CEP inválido');
-                    text = `${data.logradouro || ''}${numero ? ', ' + numero : ''}${data.bairro ? ' - ' + data.bairro : ''}, ${data.localidade} - ${data.uf}`;
+                    
+                    // Formato padrão sem " - " para evitar erros na geocode
+                    text = `${data.logradouro || ''}${numero ? ', ' + numero : ''}${data.bairro ? ', ' + data.bairro : ''}, ${data.localidade}, ${data.uf}`;
 
                     showStatus('Localizando endereço...', 'info');
-                    const coords = await geocodeAddressFull(text);
-                    if (coords) {
-                        addresses.push({ id: Date.now(), text, coords, completed: false });
-                        input.value = '';
-                        renderAddressList();
-                        if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
-                        showStatus('✅ Endereço adicionado!', 'success');
-                        return;
-                    } else {
-                        throw new Error('Não foi possível localizar o endereço');
-                    }
+                    const coords = await geocodeAddressFull(text, false); // Sem append base location
+                    addresses.push({ id: Date.now(), text, coords, completed: false });
+                    input.value = '';
+                    renderAddressList();
+                    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
+                    showStatus('✅ Endereço adicionado!', 'success');
+                    return;
                 } catch (e) {
                     showStatus('Erro no CEP: ' + e.message, 'warning');
+                    // Ainda adiciona mesmo se geocode falhar, como nos não-CEP
+                    addresses.push({ id: Date.now(), text, completed: false });
+                    input.value = '';
+                    renderAddressList();
+                    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
                     return;
                 }
             }
@@ -638,10 +641,10 @@
         }
 
         // === Geocodificação ===
-        async function geocodeAddressFull(address) {
+        async function geocodeAddressFull(address, useBase = true) {
             try {
                 let query = address + ', Brasil';
-                if (userLocation) {
+                if (useBase && userLocation) {
                     query = address + ', ' + userLocation.city + (userLocation.state ? ', ' + userLocation.state : '') + ', Brasil';
                 }
                 const resp = await fetch(
@@ -938,6 +941,7 @@
             activeIndex = 0;
             addresses = [];
             departure = null;
+            userLocation = null; // Corrigido: reset localização base
             distanceCache.clear(); // Limpar cache
             document.getElementById('base-location-section').style.display = 'block';
             document.getElementById('departure-section').style.display = 'none';
@@ -946,7 +950,12 @@
             renderAddressList();
             document.getElementById('optimize-btn').style.display = 'none';
             document.getElementById('status-container').innerHTML = '';
+            document.getElementById('base-location-input').value = ''; // Limpa input base
+            document.getElementById('base-location-display').textContent = 'Nenhuma localização base definida. Por favor, defina para continuar.';
+            document.getElementById('departure-input').value = ''; // Limpa input partida
             document.getElementById('departure-display').textContent = 'Nenhum ponto de partida definido.';
+            document.getElementById('address-input').value = ''; // Limpa input endereço
+            stopCamera(); // Para câmera se aberta
         }
 
         // === Voice, Camera, etc ===
