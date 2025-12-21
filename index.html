@@ -483,7 +483,7 @@
             geocodeBaseLocation(locationText);
         }
 
-        async function geocodeBaseLocation(locationText) {
+async function geocodeBaseLocation(locationText) {
             showStatus('Verificando localização base...', 'info');
             try {
                 const response = await fetch(
@@ -491,30 +491,35 @@
                     { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' }}
                 );
                 const data = await response.json();
+                console.log('Resposta geocode base:', data); // DEBUG
+                
                 if (data?.length > 0) {
                     const addr = data[0].address || {};
                     const city = addr.city || addr.town || addr.municipality || addr.village || '';
                     const state = addr.state || '';
+                    
+                    console.log('Cidade encontrada:', city, 'Estado:', state); // DEBUG
+                    
                     if (city) {
                         userLocation = { city, state };
                         document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
                         document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 (em ${city})`;
                         document.getElementById('departure-section').style.display = 'block';
-                        showStatus(`Localização base definida: ${city}${state ? ', ' + state : ''}`, 'success');
+                        showStatus(`✅ Localização base: ${city}${state ? ', ' + state : ''}`, 'success');
                     } else {
-                        throw new Error('Cidade não identificada.');
+                        throw new Error('Cidade não identificada nos resultados.');
                     }
                 } else {
-                    throw new Error('Nenhum resultado encontrado.');
+                    throw new Error('Nenhum resultado encontrado. Tente: "Cidade, Estado" (ex: São Paulo, SP)');
                 }
             } catch (error) {
                 console.error("Erro ao geocodificar localização base:", error);
-                showStatus('Erro: ' + error.message, 'warning');
+                showStatus('❌ ' + error.message, 'warning');
                 userLocation = null;
-                document.getElementById('base-location-display').textContent = 'Falha ao definir localização base.';
+                document.getElementById('base-location-display').textContent = 'Falha ao definir localização base. Tente novamente.';
             }
         }
-
+        
         // === Ponto de Partida ===
         async function setDepartureAddress() {
             const input = document.getElementById('departure-input');
