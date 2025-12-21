@@ -579,7 +579,6 @@ async function geocodeBaseLocation(locationText) {
         }
 
         // === Adicionar Endereços ===
-// === Adicionar Endereços ===
         async function addAddress() {
             if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
             const input = document.getElementById('address-input');
@@ -622,61 +621,6 @@ async function geocodeBaseLocation(locationText) {
             input.value = '';
             renderAddressList();
             if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
-        }
-        // Tratar CEP
-            const cepMatch = text.match(/^(\d{5}-?\d{3})(?:,\s*(\d+))?$/);
-            if (cepMatch) {
-                const cep = cepMatch[1].replace('-', '');
-                const numero = cepMatch[2] || '';
-                showStatus('Buscando CEP...', 'info');
-                try {
-                    const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-                    const data = await resp.json();
-                    if (data.erro) throw new Error('CEP inválido');
-                    text = `${data.logradouro || ''}${numero ? ', ' + numero : ''}${data.bairro ? ' - ' + data.bairro : ''}, ${data.localidade} - ${data.uf}`;
-                    
-                    // GEOCODIFICAR IMEDIATAMENTE APÓS RESOLVER O CEP
-                    showStatus('Localizando endereço...', 'info');
-                    const coords = await geocodeAddressFull(text);
-                    if (coords) {
-                        addresses.push({ id: Date.now(), text, coords, completed: false });
-                        input.value = '';
-                        renderAddressList();
-                        if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
-                        showStatus('Endereço adicionado: ' + text, 'success');
-                        return; // IMPORTANTE: Sair da função aqui
-                    } else {
-                        throw new Error('Não foi possível localizar o endereço');
-                    }
-                } catch (e) {
-                    showStatus('Erro no CEP: ' + e.message, 'warning');
-                    return;
-                }
-            }
-
-        async function addUserLocationManually() {
-            if (!userLocation) return showStatus('Defina localização base primeiro.', 'warning');
-            if (!navigator.geolocation) return showStatus('Geolocalização não suportada.', 'warning');
-
-            navigator.geolocation.getCurrentPosition(
-                async (pos) => {
-                    const { lat, lon } = pos.coords;
-                    let name = `Minha posição (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
-                    try {
-                        const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=pt-BR`, {
-                            headers: { 'User-Agent': 'RouteOptimizerApp/1.0' }
-                        });
-                        const data = await resp.json();
-                        name = data.display_name || name;
-                    } catch (e) { console.warn('Falha ao nomear localização'); }
-                    addresses.unshift({ id: Date.now(), text: 'Minha posição', coords: { lat, lon, display_name: name }, completed: false });
-                    renderAddressList();
-                    document.getElementById('optimize-btn').style.display = 'block';
-                    showStatus('Posição adicionada como parada.', 'success');
-                },
-                (err) => showStatus('Erro ao obter posição: ' + err.message, 'warning'),
-                { timeout: 10000 }
-            );
         }
 
         function removeAddress(id) {
