@@ -670,42 +670,43 @@
         }
 
         // === Calcular distância real com OSRM (API gratuita) ===
-        async function calculateRealDistance(from, to) {
-            const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
-            if (distanceCache.has(key)) return distanceCache.get(key);
+async function calculateRealDistance(from, to) {
+    const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
+    if (distanceCache.has(key)) return distanceCache.get(key);
 
-            try {
-                const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
-                const resp = await fetch(url);
-                const data = await resp.json();
+    try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
+        const resp = await fetch(url);
+        const data = await resp.json();
 
-                if (data.code === 'Ok' && data.routes?.length > 0) {
-                    const distance = data.routes[0].distance; // metros
-                    const duration = data.routes[0].duration; // segundos
-                    const result = { distance, duration };
-                    distanceCache.set(key, result);
-                    return result;
-                }
-            } catch (e) {
-                console.warn('OSRM falhou, usando Haversine', e);
-            }
-
-            // Fallback: distância euclidiana (Haversine)
-            const R = 6371000; // raio da Terra em metros
-            const φ1 = from.lat * Math.PI / 180;
-            const φ2 = to.lat * Math.PI / 180;
-            const Δφ = (to.lat - from.lat) * Math.PI / 180;
-            const Δλ = (to.lon - from.lon) * Math.PI / 180;
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                      Math.cos(φ1) * Math.cos(φ2) *
-                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            const distance = R * c;
-            const duration = distance / 13.89; // ~50 km/h médio
+        if (data.code === 'Ok' && data.routes?.length > 0) {
+            const distance = data.routes[0].distance; // metros
+            const duration = data.routes[0].duration; // segundos
             const result = { distance, duration };
             distanceCache.set(key, result);
             return result;
+        } else {
+            throw new Error('OSRM não retornou uma rota válida.');
         }
+    } catch (e) {
+        console.warn('OSRM falhou, usando Haversine:', e);
+        // Fallback: distância euclidiana (Haversine)
+        const R = 6371000; // raio da Terra em metros
+        const φ1 = from.lat * Math.PI / 180;
+        const φ2 = to.lat * Math.PI / 180;
+        const Δφ = (to.lat - from.lat) * Math.PI / 180;
+        const Δλ = (to.lon - from.lon) * Math.PI / 180;
+        const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                  Math.cos(φ1) * Math.cos(φ2) *
+                  Math.sin(Δλ/2) * Math.sin(Δλ/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const distance = R * c;
+        const duration = distance / 13.89; // ~50 km/h médio
+        const result = { distance, duration };
+        distanceCache.set(key, result);
+        return result;
+    }
+}
 
         // === Algoritmo de otimização: Nearest Neighbor melhorado ===
         async function optimizeRouteNearestNeighbor(start, destinations) {
@@ -771,120 +772,127 @@
         }
 
         // === Otimização Principal ===
-        async function optimizeRoute() {
-            if (!departure || addresses.length === 0) {
-                return showStatus('Defina partida e destinos.', 'warning');
+async function optimizeRoute() {
+    if (!departure || addresses.length === 0) {
+        return showStatus('Defina partida e destinos.', 'warning');
+    }
+
+    const btn = document.getElementById('optimize-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Otimizando...';
+
+    try {
+        // 1. Geocodificar endereços (sequencialmente)
+        const destinos = [];
+        for (let i = 0; i < addresses.length; i++) {
+            showStatus(`Preparando ${i + 1}/${addresses.length}...`, 'info');
+            const address = addresses[i];
+            const coords = address.coords || await geocodeAddressFull(address.text);
+            if (!coords) {
+                showStatus(`⚠️ Endereço "${address.text}" não encontrado. Pulando...`, 'warning');
+                continue;
             }
-
-            const btn = document.getElementById('optimize-btn');
-            btn.disabled = true;
-            btn.textContent = '⏳ Otimizando...';
-
-            try {
-                // 1. Geocodificar endereços
-                const destinos = [];
-                for (let i = 0; i < addresses.length; i++) {
-                    showStatus(`Preparando ${i + 1}/${addresses.length}...`, 'info');
-                    const coords = addresses[i].coords || await geocodeAddressFull(addresses[i].text);
-                    if (coords) {
-                        destinos.push({ ...addresses[i], coords });
-                    }
-                    await delay(500);
-                }
-
-                if (!destinos.length) throw new Error('Nenhum destino válido');
-
-                // 2. Otimização com Nearest Neighbor
-                showStatus('Calculando melhor rota...', 'info');
-                let optimized = await optimizeRouteNearestNeighbor(departure, destinos);
-
-                // 3. Melhorar com 2-opt (apenas se tiver mais de 3 destinos)
-                if (optimized.length > 3) {
-                    showStatus('Refinando rota...', 'info');
-                    optimized = await twoOptImprovement(optimized, departure);
-                }
-
-                // 4. Calcular estatísticas
-                let totalDistance = 0;
-                let totalDuration = 0;
-                let prev = departure;
-                for (const dest of optimized) {
-                    const { distance, duration } = await calculateRealDistance(prev.coords, dest.coords);
-                    totalDistance += distance;
-                    totalDuration += duration;
-                    prev = dest;
-                }
-
-                optimizedRoute = [departure, ...optimized];
-                activeIndex = 0;
-
-                document.getElementById('add-section').style.display = 'none';
-                document.getElementById('route-section').style.display = 'block';
-                renderRoute();
-
-                const distKm = (totalDistance / 1000).toFixed(1);
-                const durMin = Math.round(totalDuration / 60);
-                showStatus(`✅ Rota otimizada! ${distKm}km · ~${durMin}min`, 'success');
-
-            } catch (e) {
-                console.error('Erro na otimização:', e);
-                showStatus('Erro: ' + e.message, 'warning');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '▶ Otimizar Rota';
-            }
+            destinos.push({ ...address, coords });
+            await delay(500); // Evita sobrecarga na API
         }
 
+        if (destinos.length === 0) throw new Error('Nenhum destino válido');
+
+        // 2. Otimização com Nearest Neighbor
+        showStatus('Calculando melhor rota...', 'info');
+        let optimized = await optimizeRouteNearestNeighbor(departure, destinos);
+
+        // 3. Melhorar com 2-opt (apenas se tiver mais de 3 destinos)
+        if (optimized.length > 3) {
+            showStatus('Refinando rota...', 'info');
+            optimized = await twoOptImprovement(optimized, departure);
+        }
+
+        // 4. Calcular estatísticas
+        let totalDistance = 0;
+        let totalDuration = 0;
+        let prev = departure;
+        for (const dest of optimized) {
+            const { distance, duration } = await calculateRealDistance(prev.coords, dest.coords);
+            totalDistance += distance;
+            totalDuration += duration;
+            prev = dest;
+        }
+
+        optimizedRoute = [departure, ...optimized];
+        activeIndex = 0;
+
+        document.getElementById('add-section').style.display = 'none';
+        document.getElementById('route-section').style.display = 'block';
+        await renderRoute(); // Aguarda a renderização
+
+        const distKm = (totalDistance / 1000).toFixed(1);
+        const durMin = Math.round(totalDuration / 60);
+        showStatus(`✅ Rota otimizada! ${distKm}km · ~${durMin}min`, 'success');
+
+    } catch (e) {
+        console.error('Erro na otimização:', e);
+        showStatus('Erro: ' + e.message, 'warning');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '▶ Otimizar Rota';
+    }
+}
+        
         function delay(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
         }
 
         // === Renderização e Navegação ===
-        async function renderRoute() {
-            const list = document.getElementById('route-list');
+async function renderRoute() {
+    const list = document.getElementById('route-list');
+    let html = '';
 
-            // Calcular estatísticas em tempo real
-            let html = '';
-            for (let i = 0; i < optimizedRoute.length; i++) {
-                const a = optimizedRoute[i];
-                const ativo = i === activeIndex && !a.completed;
-                const concluido = a.completed;
+    for (let i = 0; i < optimizedRoute.length; i++) {
+        const a = optimizedRoute[i];
+        const ativo = i === activeIndex && !a.completed;
+        const concluido = a.completed;
 
-                let distInfo = '';
-                if (i > 0) {
-                    const prev = optimizedRoute[i - 1];
-                    const { distance, duration } = await calculateRealDistance(prev.coords, a.coords);
-                    const km = (distance / 1000).toFixed(1);
-                    const min = Math.round(duration / 60);
-                    distInfo = `<small style="color: #667eea;">📍 ${km}km · ⏱️ ${min}min do anterior</small>`;
-                }
-
-                html += `
-                    <div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
-                        <div class="route-header">
-                            <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
-                                ${concluido ? '✓' : i + 1}
-                            </div>
-                            <div class="route-text">
-                                <strong>${a.text}</strong>
-                                ${a.coords ? `<small>${a.coords.display_name}</small>` : ''}
-                                ${distInfo}
-                            </div>
-                        </div>
-                        ${ativo && !concluido ? `
-                            <div class="route-buttons">
-                                <button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">Google Maps</button>
-                                <button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">Waze</button>
-                                <button class="btn btn-complete btn-small" onclick="markCompleted(${i})">✓</button>
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
+        let distInfo = '';
+        if (i > 0) {
+            const prev = optimizedRoute[i - 1];
+            try {
+                const { distance, duration } = await calculateRealDistance(prev.coords, a.coords);
+                const km = (distance / 1000).toFixed(1);
+                const min = Math.round(duration / 60);
+                distInfo = `<small style="color: #667eea;">📍 ${km}km · ⏱️ ${min}min do anterior</small>`;
+            } catch (e) {
+                console.error('Erro ao calcular distância:', e);
+                distInfo = `<small style="color: #ff5252;">⚠️ Distância não calculada</small>`;
             }
-
-            list.innerHTML = html;
-            updateProgress();
         }
+
+        html += `
+            <div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
+                <div class="route-header">
+                    <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
+                        ${concluido ? '✓' : i + 1}
+                    </div>
+                    <div class="route-text">
+                        <strong>${a.text}</strong>
+                        ${a.coords ? `<small>${a.coords.display_name}</small>` : ''}
+                        ${distInfo}
+                    </div>
+                </div>
+                ${ativo && !concluido ? `
+                    <div class="route-buttons">
+                        <button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">Google Maps</button>
+                        <button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">Waze</button>
+                        <button class="btn btn-complete btn-small" onclick="markCompleted(${i})">✓</button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    list.innerHTML = html;
+    updateProgress();
+}
 
         function openMaps(i, app) {
             const a = optimizedRoute[i];
