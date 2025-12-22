@@ -632,7 +632,6 @@ async function processCEP(text) {
                 { timeout: 10000 }
             );
         }
-
 async function addAddress() {
     if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
     const input = document.getElementById('address-input');
@@ -660,9 +659,9 @@ async function addAddress() {
 
     // Se CEP não deu coordenadas ou não era CEP, tenta geocodificar
     if (!coords) {
-        let query = text;
+        let query = addressToUse + ', Brasil';  // ✅ CORRIGIDO: usa addressToUse e adiciona Brasil
         if (userLocation) {
-            query += `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}`;
+            query = addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
         }
         coords = await geocodeAddressFull(query, false);
         if (coords) addressToUse = query;
