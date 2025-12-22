@@ -490,18 +490,12 @@ async function processCEP(text) {
             if (data.bairro) endereco += `, ${data.bairro}`;
             endereco += `, ${data.localidade}, ${data.uf}`;
             
-            // ViaCEP retorna lat/lon diretamente (se disponíveis)
-            const lat = data.location ? parseFloat(data.location.lat) : null;
-            const lon = data.location ? parseFloat(data.location.lon) : null;
-            
             showStatus('✅ CEP encontrado!', 'success');
             
             return {
                 success: true,
                 address: endereco,
-                lat: lat,
-                lon: lon,
-                needsGeocode: false  // Não precisa geocodificar novamente
+                needsGeocode: true  // ✅ SEMPRE precisa geocodificar depois
             };
             
         } catch (e) {
@@ -560,45 +554,35 @@ async function processCEP(text) {
             }
         }
 
-        async function setDepartureAddress() {
-            const input = document.getElementById('departure-input');
-            const text = input.value.trim();
-            if (!text) return showStatus('Digite um endereço de partida.', 'warning');
-            
-            const cepResult = await processCEP(text);
-            
-            let addressToGeocode = text;
-            
-            if (cepResult && cepResult.success) {
-                addressToGeocode = cepResult.address;
-                if (cepResult.lat && cepResult.lon) {
-                   departure = { 
-                       text: addressToGeocode, 
-                       coords: { 
-                           lat: cepResult.lat, 
-                           lon: cepResult.lon, 
-                           display_name: addressToGeocode + ', Brasil' 
-            } 
-        };
-        document.getElementById('departure-display').textContent = departure.coords.display_name;
-        showStatus('✅ Ponto de partida definido!', 'success');
-        return; // Sai cedo, sem geocodificar
+async function setDepartureAddress() {
+    const input = document.getElementById('departure-input');
+    const text = input.value.trim();
+    if (!text) return showStatus('Digite um endereço de partida.', 'warning');
+    
+    const cepResult = await processCEP(text);
+    
+    let addressToGeocode = text;
+    
+    if (cepResult && cepResult.success) {
+        addressToGeocode = cepResult.address;
     }
-    // Se não tiver lat/lon (raro), continua com geocoding abaixo
-}            
-            let query = addressToGeocode;
-            if (userLocation) {
-                query += `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}`;
-            }
-            const coords = await geocodeAddressFull(query);
-            if (coords) {
-                departure = { text: addressToGeocode, coords };
-                document.getElementById('departure-display').textContent = coords.display_name;
-                showStatus('✅ Ponto de partida definido!', 'success');
-            } else {
-                showStatus('❌ Endereço de partida não encontrado.', 'warning');
-            }
-        }
+    
+    // Geocodifica o endereço
+    let query = addressToGeocode + ', Brasil';
+    if (userLocation) {
+        query = addressToGeocode + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
+    }
+    
+    const coords = await geocodeAddressFull(query, false);
+    
+    if (coords) {
+        departure = { text: addressToGeocode, coords };
+        document.getElementById('departure-display').textContent = coords.display_name;
+        showStatus('✅ Ponto de partida definido!', 'success');
+    } else {
+        showStatus('❌ Endereço de partida não encontrado.', 'warning');
+    }
+}
 
         function setDepartureCurrentLocation() {
             if (!navigator.geolocation) return showStatus('Geolocalização não suportada.', 'warning');
@@ -632,6 +616,7 @@ async function processCEP(text) {
                 { timeout: 10000 }
             );
         }
+
 async function addAddress() {
     if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
     const input = document.getElementById('address-input');
@@ -647,25 +632,15 @@ async function addAddress() {
     if (cepResult && cepResult.success) {
         // Se CEP encontrado, usa o endereço montado
         addressToUse = cepResult.address;
-        // Se ViaCEP deu lat/lon, usa direto (muito mais confiável!)
-        if (cepResult.lat && cepResult.lon) {
-            coords = {
-                lat: cepResult.lat,
-                lon: cepResult.lon,
-                display_name: addressToUse + ', Brasil'
-            };
-        }
     }
 
-    // Se CEP não deu coordenadas ou não era CEP, tenta geocodificar
-    if (!coords) {
-        let query = addressToUse + ', Brasil';  // ✅ CORRIGIDO: usa addressToUse e adiciona Brasil
-        if (userLocation) {
-            query = addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-        }
-        coords = await geocodeAddressFull(query, false);
-        if (coords) addressToUse = query;
+    // Geocodifica o endereço (seja CEP ou endereço normal)
+    let query = addressToUse + ', Brasil';
+    if (userLocation) {
+        query = addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
     }
+    
+    coords = await geocodeAddressFull(query, false);
 
     if (!coords) {
         return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
@@ -676,6 +651,34 @@ async function addAddress() {
     renderAddressList();
     if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
     showStatus('✅ Endereço adicionado!', 'success');
+}
+
+function renderAddressList() {
+    const list = document.getElementById('address-list');
+    if (addresses.length === 0) {
+        list.innerHTML = '';
+        return;
+    }
+    
+    let html = '';
+    addresses.forEach((addr, index) => {
+        html += `
+            <div class="address-item">
+                <div class="address-number">${index + 1}</div>
+                <div class="address-text">${addr.text}</div>
+                <button class="btn-delete" onclick="deleteAddress(${addr.id})">✕</button>
+            </div>
+        `;
+    });
+    list.innerHTML = html;
+}
+
+function deleteAddress(id) {
+    addresses = addresses.filter(a => a.id !== id);
+    renderAddressList();
+    if (addresses.length === 0) {
+        document.getElementById('optimize-btn').style.display = 'none';
+    }
 }
         async function geocodeAddressFull(address, useBase = true) {
             try {
