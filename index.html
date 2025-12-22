@@ -17,7 +17,7 @@
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            background: #FFB100;
+            background: #FFEB3B;
             min-height: 100vh;
             padding: 20px;
             padding-bottom: 40px;
@@ -624,14 +624,30 @@ async function addAddress() {
     console.log('CEP Result:', cepResult);
 
     if (cepResult && cepResult.success) {
-        // Se for um CEP válido encontrado
-        addressToUse = cepResult.address; // Usa o endereço completo retornado por processCEP
-        console.log('Endereço montado pelo CEP:', addressToUse);
-        // Geocodifica o endereço completo retornado pelo ViaCEP
-        // NÃO adiciona userLocation novamente aqui
-        coords = await geocodeAddressFull(addressToUse + ', Brasil', false); // useBase = false para CEP
+        // --- INÍCIO DAS MUDANÇAS ---
+        // 1. Tenta geocodificar o CEP puro primeiro
+        addressToUse = text; // O texto original (ex: "85851-000, 1318") é o CEP
+        console.log('Tentando geocodificar CEP puro:', addressToUse);
+        coords = await geocodeAddressFull(addressToUse, false); // useBase = false
+
+        if (coords) {
+            console.log('Geocodificação do CEP puro bem-sucedida.');
+            // Se o CEP puro funcionou, o coords.display_name pode ser genérico (apenas o CEP).
+            // Atualizamos o texto para exibir o endereço formatado do ViaCEP, que é mais descritivo.
+            addressToUse = cepResult.address; // Usa o endereço completo formatado
+        } else {
+            console.log('Geocodificação do CEP puro falhou. Tentando endereço formatado.');
+            // 2. Se o CEP puro falhar, tenta o endereço formatado do ViaCEP
+            addressToUse = cepResult.address;
+            console.log('Endereço montado pelo CEP para geocodificação:', addressToUse);
+            // Tenta geocodificar o endereço formatado (log, num, bairro, cid, uf)
+            // Adiciona ", Brasil" e NÃO adiciona userLocation novamente
+            coords = await geocodeAddressFull(addressToUse + ', Brasil', false); // useBase = false
+        }
+        // --- FIM DAS MUDANÇAS ---
     } else {
         // Se NÃO for um CEP, prossegue com o fluxo original
+        addressToUse = text;
         let query = addressToUse + ', Brasil';
         if (userLocation) {
             query = addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
@@ -639,8 +655,9 @@ async function addAddress() {
         coords = await geocodeAddressFull(query, false); // useBase já foi usado na query
     }
 
-    console.log('Query para geocodificação final:', addressToUse + (cepResult?.success ? ', Brasil' : (userLocation ? `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil` : ', Brasil')));
+    console.log('Query final usada para geocodificação (se aplicável):', addressToUse + (cepResult?.success && !coords ? ' (ou CEP puro que falhou antes)' : ''));
     console.log('Coordenadas retornadas da geocodificação:', coords);
+    console.log('Endereço final a ser adicionado:', addressToUse);
     console.log('======================');
 
     if (!coords) {
@@ -653,26 +670,6 @@ async function addAddress() {
     renderAddressList();
     if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block'; // Mostra botão de otimizar se houver endereços
     showStatus('✅ Endereço adicionado!', 'success');
-}
-
-function renderAddressList() {
-    const list = document.getElementById('address-list');
-    if (addresses.length === 0) {
-        list.innerHTML = '';
-        return;
-    }
-    
-    let html = '';
-    addresses.forEach((addr, index) => {
-        html += `
-            <div class="address-item">
-                <div class="address-number">${index + 1}</div>
-                <div class="address-text">${addr.text}</div>
-                <button class="btn-delete" onclick="deleteAddress(${addr.id})">✕</button>
-            </div>
-        `;
-    });
-    list.innerHTML = html;
 }
 
 function deleteAddress(id) {
