@@ -637,18 +637,19 @@ async function addAddress() {
         // Se CEP encontrado, usa o endereço montado
         addressToUse = cepResult.address;
         console.log('Endereço montado pelo CEP:', addressToUse);
+        
+        // Para CEPs, NÃO adiciona a localização base (já vem completo do ViaCEP)
+        coords = await geocodeAddressFull(addressToUse + ', Brasil', false);
+    } else {
+        // Para endereços normais, adiciona a localização base
+        let query = addressToUse + ', Brasil';
+        if (userLocation) {
+            query = addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
+        }
+        coords = await geocodeAddressFull(query, false);
     }
-
-    // Geocodifica o endereço (seja CEP ou endereço normal)
-    let query = addressToUse + ', Brasil';
-    if (userLocation) {
-        query = addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-    }
     
-    console.log('Query para geocodificação:', query);
-    
-    coords = await geocodeAddressFull(query, false);
-    
+    console.log('Query para geocodificação:', addressToUse + (cepResult?.success ? ', Brasil' : ''));
     console.log('Coordenadas retornadas:', coords);
     console.log('======================');
 
