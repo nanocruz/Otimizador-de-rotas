@@ -368,10 +368,7 @@
                 Otimizador de Rotas
             </h1>
         </div>
-        <!-- Status -->
         <div id="status-container"></div>
-
-        <!-- Definir Localização Base -->
         <div id="base-location-section" class="card base-location-section">
             <h3 style="margin-bottom: 10px; color: #333;">Localização Base</h3>
             <p style="margin-bottom: 15px; font-size: 14px; color: #555;">Defina a cidade/região onde você deseja adicionar os endereços.</p>
@@ -383,13 +380,11 @@
                 Nenhuma localização base definida. Por favor, defina para continuar.
             </div>
         </div>
-
-        <!-- Ponto de Partida -->
         <div id="departure-section" class="card" style="display: none;">
             <h3 style="margin-bottom: 10px; color: #333;">📍 Ponto de Partida</h3>
             <p style="margin-bottom: 15px; font-size: 14px; color: #555;">De onde você vai iniciar a rota?</p>
             <div class="input-group">
-                <input type="text" id="departure-input" placeholder="Ex: Av. Paulista, 1000, São Paulo, SP">
+                <input type="text" id="departure-input" placeholder="Ex: Av. Paulista, 1000 ou CEP 01310-100">
                 <button class="btn btn-primary" onclick="setDepartureAddress()">+</button>
             </div>
             <button class="btn btn-voice" style="width:100%; margin-top:10px;" onclick="setDepartureCurrentLocation()">
@@ -399,17 +394,15 @@
                 Nenhum ponto de partida definido.
             </div>
         </div>
-
-        <!-- Adicionar Endereços -->
         <div id="add-section" class="card">
             <h2 style="margin-bottom: 15px; color: #333;">Adicionar Endereços</h2>
             <div class="tip-box">
                 <strong>💡 Dica de uso:</strong>
-                Use endereços completos para melhores resultados!
-                <small>Exemplos: "Av. Paulista, 1578, São Paulo, SP" • "85855-185, 555"</small>
+                Use endereços completos ou CEP para melhores resultados!
+                <small>Exemplos: "Av. Paulista, 1578, São Paulo, SP" • "85855-185" • "85855185, 555" • "CEP: 85855-185"</small>
             </div>
             <div class="input-group">
-                <input type="text" id="address-input" placeholder="Ex: Av. Paulista, 1578, São Paulo, SP">
+                <input type="text" id="address-input" placeholder="Ex: Av. Paulista, 1578 ou CEP 01310-100">
                 <button class="btn btn-primary" onclick="addAddress()">+</button>
             </div>
             <div class="buttons-grid">
@@ -439,8 +432,6 @@
                 ▶ Otimizar Rota
             </button>
         </div>
-
-        <!-- Rota Otimizada -->
         <div id="route-section" class="card" style="display: none;">
             <div class="header-actions">
                 <h2 style="color: #333;">Rota Otimizada</h2>
@@ -455,14 +446,13 @@
         let addresses = [];
         let optimizedRoute = [];
         let activeIndex = 0;
-        let userLocation = null; // { city, state }
-        let departure = null; // { text, coords }
+        let userLocation = null;
+        let departure = null;
         let isListening = false;
         let cameraStream = null;
         let scannerType = null;
         let isPhotoMode = false;
 
-        // Inicialização
         window.onload = () => {
             document.getElementById('address-input').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') addAddress();
@@ -476,10 +466,51 @@
             document.getElementById('departure-input').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') setDepartureAddress();
             });
-            document.getElementById('address-input').placeholder = 'Ex: Av. Paulista, 1578, São Paulo, SP';
         };
 
-        // === Localização Base ===
+        async function processCEP(text) {
+            const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
+            
+            if (cepMatch) {
+                const cep = cepMatch[1] + cepMatch[2];
+                const numero = cepMatch[3] || '';
+                
+                showStatus('🔍 Buscando CEP...', 'info');
+                
+                try {
+                    const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+                    const data = await resp.json();
+                    
+                    if (data.erro) {
+                        throw new Error('CEP não encontrado');
+                    }
+                    
+                    let endereco = data.logradouro || '';
+                    if (numero) endereco += `, ${numero}`;
+                    if (data.bairro) endereco += `, ${data.bairro}`;
+                    endereco += `, ${data.localidade}, ${data.uf}`;
+                    
+                    showStatus('✅ CEP encontrado!', 'success');
+                    
+                    return {
+                        success: true,
+                        address: endereco,
+                        needsGeocode: true
+                    };
+                    
+                } catch (e) {
+                    showStatus('⚠️ CEP inválido: ' + e.message, 'warning');
+                    return {
+                        success: false,
+                        address: text,
+                        needsGeocode: false
+                    };
+                }
+            }
+            
+            return null;
+        }
+
         function setBaseLocation() {
             const input = document.getElementById('base-location-input');
             const locationText = input.value.trim();
@@ -513,7 +544,7 @@
 
                 userLocation = { city, state };
                 document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
-                document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 (em ${city})`;
+                document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 ou CEP (em ${city})`;
                 document.getElementById('departure-section').style.display = 'block';
                 showStatus(`✅ Localização base: ${city}${state ? ', ' + state : ''}`, 'success');
             } catch (error) {
@@ -524,22 +555,40 @@
             }
         }
 
-        // === Ponto de Partida ===
         async function setDepartureAddress() {
             const input = document.getElementById('departure-input');
             const text = input.value.trim();
             if (!text) return showStatus('Digite um endereço de partida.', 'warning');
-            let query = text;
+            
+            const cepResult = await processCEP(text);
+            
+            let addressToGeocode = text;
+            
+            if (cepResult && cepResult.success) {
+                addressToGeocode = cepResult.address;
+                showStatus('Localizando ponto de partida...', 'info');
+                const coords = await geocodeAddressFull(addressToGeocode, false);
+                if (coords) {
+                    departure = { text: addressToGeocode, coords };
+                    document.getElementById('departure-display').textContent = coords.display_name;
+                    showStatus('✅ Ponto de partida definido!', 'success');
+                } else {
+                    showStatus('❌ Endereço de partida não encontrado.', 'warning');
+                }
+                return;
+            }
+            
+            let query = addressToGeocode;
             if (userLocation) {
                 query += `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}`;
             }
             const coords = await geocodeAddressFull(query);
             if (coords) {
-                departure = { text, coords };
+                departure = { text: addressToGeocode, coords };
                 document.getElementById('departure-display').textContent = coords.display_name;
-                showStatus('Ponto de partida definido!', 'success');
+                showStatus('✅ Ponto de partida definido!', 'success');
             } else {
-                showStatus('Endereço de partida não encontrado.', 'warning');
+                showStatus('❌ Endereço de partida não encontrado.', 'warning');
             }
         }
 
@@ -576,38 +625,26 @@
             );
         }
 
-        // === Adicionar Endereços ===
         async function addAddress() {
             if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
             const input = document.getElementById('address-input');
             let text = input.value.trim();
             if (!text) return;
 
-            // Tratar CEP com regex mais flexível
-            const cepMatch = text.match(/^\s*(?:cep\s*)?(\d{5}-?\d{3})(?:,\s*(\d+))?\s*$/i);
-            if (cepMatch) {
-                const cep = cepMatch[1].replace('-', '');
-                const numero = cepMatch[2] || '';
-                showStatus('Buscando CEP...', 'info');
-                try {
-                    const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-                    const data = await resp.json();
-                    if (data.erro) throw new Error('CEP inválido');
-                    
-                    // Formato padrão sem " - " para evitar erros na geocode
-                    text = `${data.logradouro || ''}${numero ? ', ' + numero : ''}${data.bairro ? ', ' + data.bairro : ''}, ${data.localidade}, ${data.uf}`;
-
+            const cepResult = await processCEP(text);
+            
+            if (cepResult) {
+                if (cepResult.success) {
+                    text = cepResult.address;
                     showStatus('Localizando endereço...', 'info');
-                    const coords = await geocodeAddressFull(text, false); // Sem append base location
+                    const coords = await geocodeAddressFull(text, false);
                     addresses.push({ id: Date.now(), text, coords, completed: false });
                     input.value = '';
                     renderAddressList();
                     if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
                     showStatus('✅ Endereço adicionado!', 'success');
                     return;
-                } catch (e) {
-                    showStatus('Erro no CEP: ' + e.message, 'warning');
-                    // Ainda adiciona mesmo se geocode falhar, como nos não-CEP
+                } else {
                     addresses.push({ id: Date.now(), text, completed: false });
                     input.value = '';
                     renderAddressList();
@@ -616,7 +653,6 @@
                 }
             }
 
-            // Se não for CEP, adiciona normalmente (geocodifica depois)
             addresses.push({ id: Date.now(), text, completed: false });
             input.value = '';
             renderAddressList();
@@ -640,7 +676,6 @@
             `).join('') : '';
         }
 
-        // === Geocodificação ===
         async function geocodeAddressFull(address, useBase = true) {
             try {
                 let query = address + ', Brasil';
@@ -663,14 +698,12 @@
             return null;
         }
 
-        // === Cache de distâncias ===
         const distanceCache = new Map();
 
         function getCacheKey(lat1, lon1, lat2, lon2) {
             return `${lat1.toFixed(5)},${lon1.toFixed(5)}-${lat2.toFixed(5)},${lon2.toFixed(5)}`;
         }
 
-        // === Calcular distância real com OSRM (API gratuita) ===
         async function calculateRealDistance(from, to) {
             const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
             if (distanceCache.has(key)) return distanceCache.get(key);
@@ -681,8 +714,8 @@
                 const data = await resp.json();
 
                 if (data.code === 'Ok' && data.routes?.length > 0) {
-                    const distance = data.routes[0].distance; // metros
-                    const duration = data.routes[0].duration; // segundos
+                    const distance = data.routes[0].distance;
+                    const duration = data.routes[0].duration;
                     const result = { distance, duration };
                     distanceCache.set(key, result);
                     return result;
@@ -691,8 +724,7 @@
                 }
             } catch (e) {
                 console.warn('OSRM falhou, usando Haversine:', e);
-                // Fallback: distância euclidiana (Haversine)
-                const R = 6371000; // raio da Terra em metros
+                const R = 6371000;
                 const φ1 = from.lat * Math.PI / 180;
                 const φ2 = to.lat * Math.PI / 180;
                 const Δφ = (to.lat - from.lat) * Math.PI / 180;
@@ -702,14 +734,13 @@
                           Math.sin(Δλ/2) * Math.sin(Δλ/2);
                 const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
                 const distance = R * c;
-                const duration = distance / 13.89; // ~50 km/h médio
+                const duration = distance / 13.89;
                 const result = { distance, duration };
                 distanceCache.set(key, result);
                 return result;
             }
         }
 
-        // === Algoritmo de otimização: Nearest Neighbor melhorado ===
         async function optimizeRouteNearestNeighbor(start, destinations) {
             const route = [];
             const remaining = [...destinations];
