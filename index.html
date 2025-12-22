@@ -625,40 +625,43 @@
             );
         }
 
-        async function addAddress() {
-            if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
-            const input = document.getElementById('address-input');
-            let text = input.value.trim();
-            if (!text) return;
+async function addAddress() {
+    if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
+    const input = document.getElementById('address-input');
+    let text = input.value.trim();
+    if (!text) return;
 
-            const cepResult = await processCEP(text);
-            
-            if (cepResult) {
-                if (cepResult.success) {
-                    text = cepResult.address;
-                    showStatus('Localizando endereço...', 'info');
-                    const coords = await geocodeAddressFull(text, false);
-                    addresses.push({ id: Date.now(), text, coords, completed: false });
-                    input.value = '';
-                    renderAddressList();
-                    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
-                    showStatus('✅ Endereço adicionado!', 'success');
-                    return;
-                } else {
-                    addresses.push({ id: Date.now(), text, completed: false });
-                    input.value = '';
-                    renderAddressList();
-                    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
-                    return;
-                }
-            }
+    let addressToUse = text;
+    let shouldGeocode = true;
+    let coords = null;
 
-            addresses.push({ id: Date.now(), text, completed: false });
-            input.value = '';
-            renderAddressList();
-            if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
+    // Primeiro, tenta CEP
+    const cepResult = await processCEP(text);
+    if (cepResult && cepResult.success) {
+        addressToUse = cepResult.address;
+        coords = await geocodeAddressFull(addressToUse, false);
+    }
+
+    // Se CEP falhou ou não teve CEP, tenta geocodificar o texto original com localização base
+    if (!coords) {
+        let query = text;
+        if (userLocation) {
+            query += `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}`;
         }
+        coords = await geocodeAddressFull(query, false);
+        if (coords) addressToUse = query;
+    }
 
+    if (!coords) {
+        return showStatus('❌ Endereço não localizado. Tente um CEP ou endereço mais completo.', 'warning');
+    }
+
+    addresses.push({ id: Date.now(), text: addressToUse, coords, completed: false });
+    input.value = '';
+    renderAddressList();
+    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
+    showStatus('✅ Endereço adicionado!', 'success');
+}
         function removeAddress(id) {
             addresses = addresses.filter(a => a.id !== id);
             renderAddressList();
@@ -706,8 +709,9 @@
 
         async function calculateRealDistance(from, to) {
             const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
-            if (distanceCache.has(key)) return distanceCache.get(key);
-
+            if (distanceCache.has(key)) 
+            return distanceCache.get(key);
+            
             try {
                 const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
                 const resp = await fetch(url);
@@ -820,7 +824,8 @@
                     const address = addresses[i];
                     const coords = address.coords || await geocodeAddressFull(address.text);
                     if (!coords) {
-                        showStatus(`⚠️ Endereço "${address.text}" não encontrado. Pulando...`, 'warning');
+                        showStatus(`⚠️ Endereço "${address.text}" não encontrado. Usando como texto somente.`, 'warning');
+                        destinos.push({ ...address, coords: null }); // mantém mesmo sem coordenadas
                         continue;
                     }
                     destinos.push({ ...address, coords });
@@ -907,7 +912,7 @@
                             </div>
                             <div class="route-text">
                                 <strong>${i === 0 ? 'Ponto de Partida' : a.text}</strong>
-                                ${a.coords ? `<small>${a.coords.display_name}</small>` : ''}
+                                ${a.coords ? `<small>${a.coords.display_name}</small>` : `<small style="color:#ff5252;">⚠️ Localização aproximada</small>`}
                                 ${distInfo}
                             </div>
                         </div>
