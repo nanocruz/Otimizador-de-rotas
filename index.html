@@ -628,10 +628,15 @@ async function addAddress() {
 
     // Tenta processar CEP
     const cepResult = await processCEP(text);
+    
+    console.log('=== DEBUG addAddress ===');
+    console.log('Texto original:', text);
+    console.log('CEP Result:', cepResult);
 
     if (cepResult && cepResult.success) {
         // Se CEP encontrado, usa o endereço montado
         addressToUse = cepResult.address;
+        console.log('Endereço montado pelo CEP:', addressToUse);
     }
 
     // Geocodifica o endereço (seja CEP ou endereço normal)
@@ -640,7 +645,12 @@ async function addAddress() {
         query = addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
     }
     
+    console.log('Query para geocodificação:', query);
+    
     coords = await geocodeAddressFull(query, false);
+    
+    console.log('Coordenadas retornadas:', coords);
+    console.log('======================');
 
     if (!coords) {
         return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
