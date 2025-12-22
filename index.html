@@ -467,37 +467,28 @@
                 if (e.key === 'Enter') setDepartureAddress();
             });
         };
-
 async function processCEP(text) {
     const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
-    
     if (cepMatch) {
         const cep = cepMatch[1] + cepMatch[2];
         const numero = cepMatch[3] || '';
-        
         showStatus('🔍 Buscando CEP...', 'info');
-        
         try {
             const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
             const data = await resp.json();
-            
             if (data.erro) {
                 throw new Error('CEP não encontrado');
             }
-            
             let endereco = data.logradouro || '';
             if (numero) endereco += `, ${numero}`;
             if (data.bairro) endereco += `, ${data.bairro}`;
             endereco += `, ${data.localidade}, ${data.uf}`;
-            
             showStatus('✅ CEP encontrado!', 'success');
-            
             return {
                 success: true,
                 address: endereco,
                 needsGeocode: true  // ✅ SEMPRE precisa geocodificar depois
             };
-            
         } catch (e) {
             showStatus('⚠️ CEP inválido: ' + e.message, 'warning');
             return {
@@ -507,9 +498,9 @@ async function processCEP(text) {
             };
         }
     }
-    
-    return null;
+    return null; // Não é um CEP
 }
+
         function setBaseLocation() {
             const input = document.getElementById('base-location-input');
             const locationText = input.value.trim();
@@ -628,39 +619,39 @@ async function addAddress() {
 
     // Tenta processar CEP
     const cepResult = await processCEP(text);
-    
     console.log('=== DEBUG addAddress ===');
     console.log('Texto original:', text);
     console.log('CEP Result:', cepResult);
 
     if (cepResult && cepResult.success) {
-        // Se CEP encontrado, usa o endereço montado
-        addressToUse = cepResult.address;
+        // Se for um CEP válido encontrado
+        addressToUse = cepResult.address; // Usa o endereço completo retornado por processCEP
         console.log('Endereço montado pelo CEP:', addressToUse);
-        
-        // Para CEPs, NÃO adiciona a localização base (já vem completo do ViaCEP)
-        coords = await geocodeAddressFull(addressToUse + ', Brasil', false);
+        // Geocodifica o endereço completo retornado pelo ViaCEP
+        // NÃO adiciona userLocation novamente aqui
+        coords = await geocodeAddressFull(addressToUse + ', Brasil', false); // useBase = false para CEP
     } else {
-        // Para endereços normais, adiciona a localização base
+        // Se NÃO for um CEP, prossegue com o fluxo original
         let query = addressToUse + ', Brasil';
         if (userLocation) {
             query = addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
         }
-        coords = await geocodeAddressFull(query, false);
+        coords = await geocodeAddressFull(query, false); // useBase já foi usado na query
     }
-    
-    console.log('Query para geocodificação:', addressToUse + (cepResult?.success ? ', Brasil' : ''));
-    console.log('Coordenadas retornadas:', coords);
+
+    console.log('Query para geocodificação final:', addressToUse + (cepResult?.success ? ', Brasil' : (userLocation ? `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil` : ', Brasil')));
+    console.log('Coordenadas retornadas da geocodificação:', coords);
     console.log('======================');
 
     if (!coords) {
         return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
     }
 
+    // Adiciona o endereço à lista com as coordenadas encontradas
     addresses.push({ id: Date.now(), text: addressToUse, coords, completed: false });
-    input.value = '';
+    input.value = ''; // Limpa o campo de entrada
     renderAddressList();
-    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
+    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block'; // Mostra botão de otimizar se houver endereços
     showStatus('✅ Endereço adicionado!', 'success');
 }
 
