@@ -609,58 +609,25 @@ async function addAddress() {
     let addressToUse = text;
     let coords = null;
 
-    // Tenta processar CEP
     const cepResult = await processCEP(text);
-    console.log('=== DEBUG addAddress ===');
-    console.log('Texto original:', text);
-    console.log('CEP Result:', cepResult);
-
-    let useBase = true;
     if (cepResult && cepResult.success) {
         addressToUse = cepResult.address;
-        console.log('Endereço montado pelo CEP:', addressToUse);
-        useBase = false;
-        coords = await geocodeAddressFull(addressToUse, useBase);
-        console.log('Query para geocodificação (CEP):', addressToUse + ', Brasil');
+        const query = `${addressToUse}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
+        coords = await geocodeAddressFull(query, false);
     } else {
-        coords = await geocodeAddressFull(addressToUse, useBase);
-        console.log('Query para geocodificação (Normal):', useBase && userLocation ? addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil` : addressToUse + ', Brasil');
+        coords = await geocodeAddressFull(addressToUse, true);
     }
-
-    console.log('Coordenadas retornadas da geocodificação:', coords);
-    console.log('Endereço final a ser adicionado:', addressToUse);
-    console.log('======================');
 
     if (!coords) {
         return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
     }
 
-    // Adiciona o endereço à lista com as coordenadas encontradas
     addresses.push({ id: Date.now(), text: addressToUse, coords, completed: false });
-    input.value = ''; // Limpa o campo de entrada
-    renderAddressList(); // Chama a função global
-    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block'; // Mostra botão de otimizar se houver endereços
+    input.value = '';
+    renderAddressList();
+    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
     showStatus('✅ Endereço adicionado!', 'success');
 }
-        // Função MOVIDA PARA O ESCOPO GLOBAL para renderizar a lista de endereços
-        function renderAddressList() {
-            const list = document.getElementById('address-list');
-            if (addresses.length === 0) {
-                list.innerHTML = '';
-                return;
-            }
-            let html = '';
-            addresses.forEach((addr, index) => {
-                html += `
-                    <div class="address-item">
-                        <div class="address-number">${index + 1}</div>
-                        <div class="address-text">${addr.text}</div>
-                        <button class="btn-delete" onclick="deleteAddress(${addr.id})">✕</button>
-                    </div>
-                `;
-            });
-            list.innerHTML = html;
-        }
 
         // Função para deletar um endereço
         function deleteAddress(id) {
@@ -672,7 +639,6 @@ async function addAddress() {
         }
 
         // Função para geocodificação
-
 async function geocodeAddressFull(address, useBase = true) {
     try {
         let query = address;
@@ -692,16 +658,12 @@ async function geocodeAddressFull(address, useBase = true) {
                 display_name: data[0].display_name
             };
         }
-    } catch (e) { console.error('Erro geocodificação:', e); }
+    } catch (e) {
+        console.error('Erro geocodificação:', e);
+    }
     return null;
 }
-        // === Funções de Otimização, Renderização de Rota, etc ===
-        // (As funções a seguir permanecem inalteradas do seu código original)
 
-        const distanceCache = new Map();
-        function getCacheKey(lat1, lon1, lat2, lon2) {
-            return `${lat1.toFixed(5)},${lon1.toFixed(5)}-${lat2.toFixed(5)},${lon2.toFixed(5)}`;
-        }
         async function calculateRealDistance(from, to) {
             const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
             if (distanceCache.has(key))
@@ -846,6 +808,24 @@ async function geocodeAddressFull(address, useBase = true) {
         function delay(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
         }
+function renderAddressList() {
+    const list = document.getElementById('address-list');
+    if (addresses.length === 0) {
+        list.innerHTML = '';
+        return;
+    }
+    let html = '';
+    addresses.forEach((addr, index) => {
+        html += `
+            <div class="address-item">
+                <div class="address-number">${index + 1}</div>
+                <div class="address-text">${addr.text}</div>
+                <button class="btn-delete" onclick="deleteAddress(${addr.id})">✕</button>
+            </div>
+        `;
+    });
+    list.innerHTML = html;
+}
 
         async function renderRoute() {
             const list = document.getElementById('route-list');
@@ -1008,51 +988,52 @@ async function geocodeAddressFull(address, useBase = true) {
             await startCamera();
         }
 
-        async function startCamera() {
-            try {
-                cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-                document.getElementById('camera-video').srcObject = cameraStream;
-                document.getElementById('camera-container').style.display = 'block';
-                if (!isPhotoMode && scannerType) {
-                    const video = document.getElementById('camera-video');
-                    const canvas = document.createElement('canvas');
-                    const interval = setInterval(() => {
-                        if (video.videoWidth > 0 && video.videoHeight > 0) {
-                            canvas.width = video.videoWidth;
-                            canvas.height = video.videoHeight;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(video, 0, 0);
-                            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                            if (scannerType === 'qr') {
-                                const code = jsQR(img.data, canvas.width, canvas.height);
-                                if (code) {
-                                    handleScannedCode(code.data);
-                                    clearInterval(interval);
-                                    stopCamera();
-                                }
-                            } else if (scannerType === 'barcode') {
-                                Quagga.decodeSingle({
-                                    decoder: { readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'code_39_vin_reader', 'codabar_reader', 'upc_reader', 'upc_e_reader', 'i2of5_reader'] },
-                                    locate: true,
-                                    src: canvas.toDataURL('image/png')
-                                }, (result) => {
-                                    if (result?.codeResult) {
-                                        handleScannedCode(result.codeResult.code);
-                                        clearInterval(interval);
-                                        stopCamera();
-                                    }
-                                });
-                            }
+async function startCamera() {
+    try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        document.getElementById('camera-video').srcObject = cameraStream;
+        document.getElementById('camera-container').style.display = 'block';
+
+        if (!isPhotoMode && scannerType) {
+            const video = document.getElementById('camera-video');
+            const canvas = document.createElement('canvas');
+            const interval = setInterval(async () => {
+                if (video.videoWidth > 0 && video.videoHeight > 0) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(video, 0, 0);
+                    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    if (scannerType === 'qr') {
+                        const code = jsQR(img.data, canvas.width, canvas.height);
+                        if (code) {
+                            handleScannedCode(code.data);
+                            clearInterval(interval);
+                            stopCamera();
                         }
-                    }, 300);
+                    } else if (scannerType === 'barcode') {
+                        Quagga.decodeSingle({
+                            decoder: { readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'code_39_vin_reader', 'codabar_reader', 'upc_reader', 'upc_e_reader', 'i2of5_reader'] },
+                            locate: true,
+                            src: canvas.toDataURL('image/png')
+                        }, (result) => {
+                            if (result?.codeResult) {
+                                handleScannedCode(result.codeResult.code);
+                                clearInterval(interval);
+                                stopCamera();
+                            }
+                        });
+                    }
                 }
-            } catch (e) {
-                let msg = 'Erro desconhecido.';
-                if (e.name === 'NotAllowedError') msg = 'Permissão de câmera negada.';
-                showStatus('Erro na câmera: ' + msg, 'warning');
-                document.getElementById('camera-container').style.display = 'none';
-            }
+            }, 300);
         }
+    } catch (e) {
+        let msg = 'Erro desconhecido.';
+        if (e.name === 'NotAllowedError') msg = 'Permissão de câmera negada.';
+        showStatus('Erro na câmera: ' + msg, 'warning');
+        document.getElementById('camera-container').style.display = 'none';
+    }
+}
 
 async function captureImage() {
     const video = document.getElementById('camera-video');
@@ -1062,7 +1043,8 @@ async function captureImage() {
     canvas.getContext('2d').drawImage(video, 0, 0);
     showStatus('Extraindo texto...', 'info');
     try {
-        const { data: { text } } = await Tesseract.recognize(canvas.toDataURL('image/png'), 'por');
+        const result = await Tesseract.recognize(canvas.toDataURL('image/png'), 'por');
+        const text = result.data.text;
         const clean = text.trim().replace(/\n/g, ' ');
         document.getElementById('address-input').value = clean;
         addAddress();
