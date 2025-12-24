@@ -17,8 +17,7 @@
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            background: #FFB100;
-
+            background: #FFEB3B; /* Cor de fundo amarela */
             min-height: 100vh;
             padding: 20px;
             padding-bottom: 40px;
@@ -546,30 +545,26 @@
         }
 
         // Função para definir o ponto de partida por endereço
-        async function setDepartureAddress() {
-            const input = document.getElementById('departure-input');
-            const text = input.value.trim();
-            if (!text) return showStatus('Digite um endereço de partida.', 'warning');
-            const cepResult = await processCEP(text);
-            let addressToGeocode = text;
-            if (cepResult && cepResult.success) {
-                addressToGeocode = cepResult.address;
-            }
-            // Geocodifica o endereço
-            let query = addressToGeocode + ', Brasil';
-            if (userLocation) {
-                query = addressToGeocode + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-            }
-            const coords = await geocodeAddressFull(query, false);
-            if (coords) {
-                departure = { text: addressToGeocode, coords };
-                document.getElementById('departure-display').textContent = coords.display_name;
-                showStatus('✅ Ponto de partida definido!', 'success');
-            } else {
-                showStatus('❌ Endereço de partida não encontrado.', 'warning');
-            }
-        }
-
+async function setDepartureAddress() {
+    const input = document.getElementById('departure-input');
+    const text = input.value.trim();
+    if (!text) return showStatus('Digite um endereço de partida.', 'warning');
+    const cepResult = await processCEP(text);
+    let addressToGeocode = text;
+    let useBase = true;
+    if (cepResult && cepResult.success) {
+        addressToGeocode = cepResult.address;
+        useBase = false;
+    }
+    const coords = await geocodeAddressFull(addressToGeocode, useBase);
+    if (coords) {
+        departure = { text: addressToGeocode, coords };
+        document.getElementById('departure-display').textContent = coords.display_name;
+        showStatus('✅ Ponto de partida definido!', 'success');
+    } else {
+        showStatus('❌ Endereço de partida não encontrado.', 'warning');
+    }
+}
         // Função para definir o ponto de partida usando a localização atual
         function setDepartureCurrentLocation() {
             if (!navigator.geolocation) return showStatus('Geolocalização não suportada.', 'warning');
@@ -605,64 +600,48 @@
         }
 
         // Função CORRIGIDA para adicionar endereço
-        async function addAddress() {
-            if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
-            const input = document.getElementById('address-input');
-            let text = input.value.trim();
-            if (!text) return;
+async function addAddress() {
+    if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
+    const input = document.getElementById('address-input');
+    let text = input.value.trim();
+    if (!text) return;
 
-            let addressToUse = text;
-            let coords = null;
+    let addressToUse = text;
+    let coords = null;
 
-            // Tenta processar CEP
-            const cepResult = await processCEP(text);
-            console.log('=== DEBUG addAddress ===');
-            console.log('Texto original:', text);
-            console.log('CEP Result:', cepResult);
+    // Tenta processar CEP
+    const cepResult = await processCEP(text);
+    console.log('=== DEBUG addAddress ===');
+    console.log('Texto original:', text);
+    console.log('CEP Result:', cepResult);
 
-            if (cepResult && cepResult.success) {
-                // --- MUDANÇA AQUI (CORREÇÃO PRINCIPAL) ---
-                // Agora, para CEPs, usamos OBRIGATORIAMENTE o endereço retornado pelo ViaCEP
-                // e o geocodificamos COM a localização base (userLocation) para garantir a cidade correta.
-                addressToUse = cepResult.address;
-                console.log('Endereço montado pelo CEP:', addressToUse);
+    let useBase = true;
+    if (cepResult && cepResult.success) {
+        addressToUse = cepResult.address;
+        console.log('Endereço montado pelo CEP:', addressToUse);
+        useBase = false;
+        coords = await geocodeAddressFull(addressToUse, useBase);
+        console.log('Query para geocodificação (CEP):', addressToUse + ', Brasil');
+    } else {
+        coords = await geocodeAddressFull(addressToUse, useBase);
+        console.log('Query para geocodificação (Normal):', useBase && userLocation ? addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil` : addressToUse + ', Brasil');
+    }
 
-                // Monta a query com o endereço do ViaCEP e a localização base
-                let query = addressToUse;
-                if (userLocation) {
-                    query += `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-                }
-                console.log('Query para geocodificação (CEP):', query);
+    console.log('Coordenadas retornadas da geocodificação:', coords);
+    console.log('Endereço final a ser adicionado:', addressToUse);
+    console.log('======================');
 
-                // Geocodifica a query combinada
-                coords = await geocodeAddressFull(query, false); // useBase já foi incluído na query
-            } else {
-                // --- MUDANÇA AQUI ---
-                // Para endereços normais, mantém o fluxo antigo, adicionando userLocation
-                let query = addressToUse + ', Brasil';
-                if (userLocation) {
-                    query = addressToUse + `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-                }
-                console.log('Query para geocodificação (Normal):', query);
-                coords = await geocodeAddressFull(query, false); // useBase já foi incluído na query
-            }
+    if (!coords) {
+        return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
+    }
 
-            console.log('Coordenadas retornadas da geocodificação:', coords);
-            console.log('Endereço final a ser adicionado:', addressToUse);
-            console.log('======================');
-
-            if (!coords) {
-                return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
-            }
-
-            // Adiciona o endereço à lista com as coordenadas encontradas
-            addresses.push({ id: Date.now(), text: addressToUse, coords, completed: false });
-            input.value = ''; // Limpa o campo de entrada
-            renderAddressList(); // Chama a função global
-            if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block'; // Mostra botão de otimizar se houver endereços
-            showStatus('✅ Endereço adicionado!', 'success');
-        }
-
+    // Adiciona o endereço à lista com as coordenadas encontradas
+    addresses.push({ id: Date.now(), text: addressToUse, coords, completed: false });
+    input.value = ''; // Limpa o campo de entrada
+    renderAddressList(); // Chama a função global
+    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block'; // Mostra botão de otimizar se houver endereços
+    showStatus('✅ Endereço adicionado!', 'success');
+}
         // Função MOVIDA PARA O ESCOPO GLOBAL para renderizar a lista de endereços
         function renderAddressList() {
             const list = document.getElementById('address-list');
@@ -693,28 +672,29 @@
         }
 
         // Função para geocodificação
-        async function geocodeAddressFull(address, useBase = true) {
-            try {
-                let query = address + ', Brasil';
-                if (useBase && userLocation) {
-                    query = address + ', ' + userLocation.city + (userLocation.state ? ', ' + userLocation.state : '') + ', Brasil';
-                }
-                const resp = await fetch(
-                    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&accept-language=pt-BR`,
-                    { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-                );
-                const data = await resp.json();
-                if (data?.length > 0) {
-                    return {
-                        lat: parseFloat(data[0].lat),
-                        lon: parseFloat(data[0].lon),
-                        display_name: data[0].display_name
-                    };
-                }
-            } catch (e) { console.error('Erro geocodificação:', e); }
-            return null;
-        }
 
+async function geocodeAddressFull(address, useBase = true) {
+    try {
+        let query = address;
+        if (useBase && userLocation) {
+            query += ', ' + userLocation.city + (userLocation.state ? ', ' + userLocation.state : '');
+        }
+        query += ', Brasil';
+        const resp = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&accept-language=pt-BR`,
+            { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
+        );
+        const data = await resp.json();
+        if (data?.length > 0) {
+            return {
+                lat: parseFloat(data[0].lat),
+                lon: parseFloat(data[0].lon),
+                display_name: data[0].display_name
+            };
+        }
+    } catch (e) { console.error('Erro geocodificação:', e); }
+    return null;
+}
         // === Funções de Otimização, Renderização de Rota, etc ===
         // (As funções a seguir permanecem inalteradas do seu código original)
 
@@ -1074,25 +1054,25 @@
             }
         }
 
-        async function captureImage() {
-            const video = document.getElementById('camera-video');
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
-            showStatus('Extraindo texto...', 'info');
-            try {
-                const { data: { text } } = await Tesseract.recognize(canvas.toDataURL('image/png'), 'por');
-                const clean = text.trim().replace(/\n/g, ' ');
-                document.getElementById('address-input').value = clean;
-                addAddress();
-                showStatus('Texto extraído: ' + clean, 'success');
-            } catch (err) {
-                console.error('OCR error:', err);
-                showStatus('Erro no OCR: ' + err.message, 'warning');
-            }
-            stopCamera();
-        }
+async function captureImage() {
+    const video = document.getElementById('camera-video');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    showStatus('Extraindo texto...', 'info');
+    try {
+        const { data: { text } } = await Tesseract.recognize(canvas.toDataURL('image/png'), 'por');
+        const clean = text.trim().replace(/\n/g, ' ');
+        document.getElementById('address-input').value = clean;
+        addAddress();
+        showStatus('Texto extraído: ' + clean, 'success');
+    } catch (err) {
+        console.error('OCR error:', err);
+        showStatus('Erro no OCR: ' + err.message, 'warning');
+    }
+    stopCamera();
+}
 
         function stopCamera() {
             if (cameraStream) {
