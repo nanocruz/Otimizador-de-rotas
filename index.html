@@ -468,40 +468,83 @@
         };
 
         // Função para processar CEP
-        async function processCEP(text) {
-            const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
-            if (cepMatch) {
-                const cep = cepMatch[1] + cepMatch[2];
-                const numero = cepMatch[3] || '';
-                showStatus('🔍 Buscando CEP...', 'info');
-                try {
-                    const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-                    const data = await resp.json();
-                    if (data.erro) {
-                        throw new Error('CEP não encontrado');
-                    }
-                    let endereco = data.logradouro || '';
-                    if (numero) endereco += `, ${numero}`;
-                    if (data.bairro) endereco += `, ${data.bairro}`;
-                    endereco += `, ${data.localidade}, ${data.uf}`;
-                    showStatus('✅ CEP encontrado!', 'success');
-                    return {
-                        success: true,
-                        address: endereco,
-                        needsGeocode: true  // SEMPRE precisa geocodificar depois
-                    };
-                } catch (e) {
-                    showStatus('⚠️ CEP inválido: ' + e.message, 'warning');
-                    return {
-                        success: false,
-                        address: text,
-                        needsGeocode: false
-                    };
-                }
-            }
-            return null; // Não é um CEP
-        }
+async function processCEP(text) {
+  const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
+  if (cepMatch) {
+    const cep = cepMatch[1] + cepMatch[2];
+    const numero = cepMatch[3] || '';
+    showStatus('🔍 Buscando CEP...', 'info');
+    try {
+      const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const data = await resp.json();
+      if (data.erro) {
+        throw new Error('CEP não encontrado');
+      }
 
+      let endereco = data.logradouro || '';
+      if (numero) endereco += `, ${numero}`;
+      if (data.bairro) endereco += `, ${data.bairro}`;
+      endereco += `, ${data.localidade}, ${data.uf}`;
+      showStatus('✅ CEP encontrado!', 'success');
+
+      // 🔍 Agora tentamos obter coordenadas diretamente do CEP!
+      // Etapa 1: Tentar Nominatim com endereço completo
+      let query = `${endereco}, Brasil`;
+      let coords = await geocodeBasic(query);
+
+      // Etapa 2 (opcional): Se falhar, tentar Google (se disponível)
+      if (!coords) {
+        coords = await geocodeWithGoogle(endereco);
+      }
+
+      // Etapa 3: Se ainda falhar, usar centro da cidade como fallback (com ViaCEP + Nominatim por cidade/UF)
+      if (!coords) {
+        const cityState = `${data.localidade}, ${data.uf}, Brasil`;
+        coords = await geocodeBasic(cityState);
+        if (coords) {
+          showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
+        }
+      }
+
+      return {
+        success: true,
+        address: endereco,
+        coords: coords || null
+      };
+    } catch (e) {
+      showStatus('⚠️ CEP inválido: ' + e.message, 'warning');
+      return {
+        success: false,
+        address: text,
+        coords: null
+      };
+    }
+  }
+  return null; // Não é um CEP
+}
+
+// ================================
+// Nova função auxiliar: geocodeBasic (Nominatim apenas)
+// ================================
+async function geocodeBasic(address) {
+  try {
+    const resp = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1&accept-language=pt-BR`,
+      { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
+    );
+    const data = await resp.json();
+    if (data?.length > 0) {
+      return {
+        lat: parseFloat(data[0].lat),
+        lon: parseFloat(data[0].lon),
+        display_name: data[0].display_name
+      };
+    }
+  } catch (e) {
+    console.error('Erro na geocodificação (Nominatim):', e);
+  }
+  return null;
+}
         // Função para definir a localização base
         function setBaseLocation() {
             const input = document.getElementById('base-location-input');
@@ -601,32 +644,75 @@ async function setDepartureAddress() {
 
         // Função CORRIGIDA para adicionar endereço
 async function addAddress() {
-    if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
-    const input = document.getElementById('address-input');
-    let text = input.value.trim();
-    if (!text) return;
+  if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
+  const input = document.getElementById('address-input');
+  let text = input.value.trim();
+  if (!text) return;
 
-    let addressToUse = text;
-    let coords = null;
-
-    const cepResult = await processCEP(text);
-    if (cepResult && cepResult.success) {
-        addressToUse = cepResult.address;
-        const query = `${addressToUse}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-        coords = await geocodeAddressFull(query, false);
-    } else {
-        coords = await geocodeAddressFull(addressToUse, true);
-    }
-
-    if (!coords) {
-        return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
-    }
-
-    addresses.push({ id: Date.now(), text: addressToUse, coords, completed: false });
+  // Tentar extrair CEP primeiro
+  const cepResult = await processCEP(text);
+  if (cepResult && cepResult.success && cepResult.coords) {
+    // ✅ Já temos coordenadas do CEP, adicionar diretamente
+    addresses.push({
+      id: Date.now(),
+      text: cepResult.address,
+      coords: cepResult.coords,
+      completed: false
+    });
     input.value = '';
     renderAddressList();
     if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
-    showStatus('✅ Endereço adicionado!', 'success');
+    showStatus('✅ Endereço adicionado via CEP!', 'success');
+    return;
+  }
+
+  // Caso contrário, tentar geocodificar normalmente
+  const coords = await geocodeAddressFull(text);
+  if (!coords) {
+    return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
+  }
+
+  addresses.push({
+    id: Date.now(),
+    text: text,
+    coords,
+    completed: false
+  });
+  input.value = '';
+  renderAddressList();
+  if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
+  showStatus('✅ Endereço adicionado!', 'success');
+}
+
+// ================================
+// Nova função: geocodeWithGoogle
+// ================================
+async function geocodeWithGoogle(address) {
+  const apiKey = 'AIzaSyBk-hJ1ZxBKVCk3Q7C_h_ah7jZbUcqK2qA'; // ⚠️ Substitua por sua chave válida
+  if (!apiKey || apiKey === 'SUA_CHAVE_DE_API_AQUI') {
+    console.warn('Chave da Google Maps API não configurada. Pulando Google Geocoding.');
+    return null;
+  }
+
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address + ', Brasil')}&key=${apiKey}&language=pt-BR&region=BR`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.status === 'OK' && data.results.length > 0) {
+      const loc = data.results[0].geometry.location;
+      const name = data.results[0].formatted_address;
+      return {
+        lat: loc.lat,
+        lon: loc.lng,
+        display_name: name
+      };
+    } else {
+      console.warn('Google Geocoding não retornou resultados:', data.status);
+    }
+  } catch (e) {
+    console.error('Erro na Google Geocoding API:', e);
+  }
+  return null;
 }
 
         // Função para deletar um endereço
@@ -639,31 +725,34 @@ async function addAddress() {
         }
 
         // Função para geocodificação
-async function geocodeAddressFull(address, useBase = true) {
-    try {
-        let query = address;
-        if (useBase && userLocation) {
-            query += ', ' + userLocation.city + (userLocation.state ? ', ' + userLocation.state : '');
-        }
-        query += ', Brasil';
-        const resp = await fetch(
-            `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&accept-language=pt-BR`,
-            { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-        );
-        const data = await resp.json();
-        if (data?.length > 0) {
-            return {
-                lat: parseFloat(data[0].lat),
-                lon: parseFloat(data[0].lon),
-                display_name: data[0].display_name
-            };
-        }
-    } catch (e) {
-        console.error('Erro geocodificação:', e);
-    }
-    return null;
-}
+async function geocodeAddressFull(address) {
+  let fullAddress = address;
+  if (userLocation) {
+    fullAddress += `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
+  } else {
+    fullAddress += ', Brasil';
+  }
 
+  // 1. Tenta Nominatim
+  let coords = await geocodeBasic(fullAddress);
+  if (coords) return coords;
+
+  // 2. Tenta Google (se chave estiver configurada)
+  coords = await geocodeWithGoogle(fullAddress);
+  if (coords) return coords;
+
+  // 3. Último fallback: só cidade/estado
+  if (userLocation) {
+    const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
+    coords = await geocodeBasic(fallback);
+    if (coords) {
+      showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
+      return coords;
+    }
+  }
+
+  return null;
+}
         async function calculateRealDistance(from, to) {
             const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
             if (distanceCache.has(key))
