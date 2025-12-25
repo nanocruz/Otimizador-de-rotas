@@ -17,7 +17,7 @@
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            background: #eaf4f4;
+            background: #FFB80C;
             min-height: 100vh;
             padding: 20px;
             padding-bottom: 40px;
@@ -441,31 +441,43 @@
             <div id="progress-bar" class="progress-bar"></div>
         </div>
     </div>
-    <script>
-        let addresses = [];
-        let optimizedRoute = [];
-        let activeIndex = 0;
-        let userLocation = null;
-        let departure = null;
-        let isListening = false;
-        let cameraStream = null;
-        let scannerType = null;
-        let isPhotoMode = false;
+<script>
+    let addresses = [];
+    let optimizedRoute = [];
+    let activeIndex = 0;
+    let userLocation = null;
+    let departure = null;
+    let isListening = false;
+    let cameraStream = null;
+    let scannerType = null;
+    let isPhotoMode = false;
 
-        window.onload = () => {
-            document.getElementById('address-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') addAddress();
-            });
-            document.getElementById('base-location-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    setBaseLocation();
-                }
-            });
-            document.getElementById('departure-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') setDepartureAddress();
-            });
-        };
+    // === Cache para distâncias reais (OSRM) ===
+    let distanceCache = new Map();
+
+    function getCacheKey(lat1, lon1, lat2, lon2) {
+        // Garante chave única e simétrica: (A,B) == (B,A)
+        if (lat1 < lat2 || (lat1 === lat2 && lon1 < lon2)) {
+            return `${lat1},${lon1}|${lat2},${lon2}`;
+        } else {
+            return `${lat2},${lon2}|${lat1},${lon1}`;
+        }
+    }
+
+    window.onload = () => {
+        document.getElementById('address-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addAddress();
+        });
+        document.getElementById('base-location-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                setBaseLocation();
+            }
+        });
+        document.getElementById('departure-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') setDepartureAddress();
+        });
+    };
 
         // Função para processar CEP
 async function processCEP(text) {
