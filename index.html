@@ -162,7 +162,6 @@
     .btn-optimize:disabled {
       opacity: 0.6;
       cursor: not-allowed;
-      transform: none;
     }
     .spinner {
       border: 2px solid rgba(255, 255, 255, 0.3);
@@ -175,16 +174,6 @@
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
-    }
-    .btn-ok {
-      padding: 10px 15px;
-      font-size: 14px;
-      background: #0056b3;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      min-width: 60px;
-      flex-shrink: 0;
     }
     .btn-small {
       padding: 10px 15px;
@@ -388,9 +377,9 @@
       <div class="base-location-input-group">
         <input type="text" id="base-location-input" placeholder="Ex: São Paulo, SP" />
         <button class="btn btn-primary" style="padding:12px 16px; font-size:16px;" onclick="setBaseLocation()">
-         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-           <polyline points="20 6 9 17 4 12"></polyline>
-         </svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
         </button>
       </div>
       <div id="base-location-display" class="base-location-display">
@@ -399,14 +388,14 @@
     </div>
 
     <div id="departure-section" class="card" style="display: none;">
-      <h3 style="margin-bottom: 10px; color: #333;">📍 Ponto de Partida</h3>
+      <h3 style="margin-bottom: 10px; color: #333;">Ponto de Partida</h3>
       <p style="margin-bottom: 15px; font-size: 14px; color: #555;">De onde você vai iniciar a rota?</p>
       <div class="input-group">
         <input type="text" id="departure-input" placeholder="Ex: Av. Paulista, 1000 ou CEP 01310-100" />
         <button class="btn btn-primary" onclick="setDepartureAddress()">+</button>
       </div>
       <button class="btn btn-voice" style="width:100%; margin-top:10px;" onclick="setDepartureCurrentLocation()">
-        📍 Usar Minha Localização Atual
+        Usar Minha Localização Atual
       </button>
       <div id="departure-display" class="base-location-display" style="margin-top:10px;">
         Nenhum ponto de partida definido.
@@ -416,7 +405,7 @@
     <div id="add-section" class="card">
       <h2 style="margin-bottom: 15px; color: #333;">Adicionar Endereços</h2>
       <div class="tip-box">
-        <strong>💡 Dica de uso:</strong>
+        <strong>Dica de uso:</strong>
         Use endereços completos ou CEP para melhores resultados!
         <small>Exemplos: "Av. Paulista, 1578, São Paulo, SP" • "85855-185" • "85855185, 555" • "CEP: 85855-185"</small>
       </div>
@@ -425,11 +414,11 @@
         <button class="btn btn-primary" onclick="addAddress()">+</button>
       </div>
       <div class="buttons-grid">
-        <button class="btn btn-voice" id="voice-btn" onclick="requestVoicePermissionAndStart()">🎤 Voz</button>
-        <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('photo')">📷 Foto</button>
-        <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('barcode')">📊 Código</button>
-        <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('qr')">🔲 QR</button>
-        <button class="btn btn-voice" onclick="addUserLocationManually()">📍 Minha Posição</button>
+        <button class="btn btn-voice" id="voice-btn" onclick="requestVoicePermissionAndStart()">Voz</button>
+        <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('photo')">Foto</button>
+        <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('barcode')">Código</button>
+        <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('qr')">QR</button>
+        <button class="btn btn-voice" onclick="addUserLocationManually()">Minha Posição</button>
       </div>
 
       <div id="camera-container" style="display: none;">
@@ -439,21 +428,20 @@
 
       <div id="address-list" class="address-list"></div>
       
-      <!-- NOVO: container para sugestões de endereço -->
       <div id="suggestions-container" class="address-list" style="display: none;"></div>
     </div>
 
     <div id="route-section" class="card" style="display: none;">
       <div class="header-actions">
         <h2 style="color: #333;">Rota Otimizada</h2>
-        <button class="btn btn-reset btn-small" onclick="resetRoute()">✕ Reiniciar</button>
+        <button class="btn btn-reset btn-small" onclick="resetRoute()">Reiniciar</button>
       </div>
       <div id="route-list"></div>
       <div id="progress-bar" class="progress-bar"></div>
     </div>
 
     <button id="optimize-btn" class="btn btn-optimize" onclick="optimizeRoute()" style="display: none;">
-      ▶ Otimizar Rota
+      Otimizar Rota
     </button>
   </div>
 
@@ -492,13 +480,13 @@
       });
     };
 
-    // === Geocodificação ===
+    // === Geocodificação (apenas Nominatim + ViaCEP) ===
     async function processCEP(text) {
       const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
       if (cepMatch) {
         const cep = cepMatch[1] + cepMatch[2];
         const numero = cepMatch[3] || '';
-        showStatus('🔍 Buscando CEP...', 'info');
+        showStatus('Buscando CEP...', 'info');
         try {
           const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
           const data = await resp.json();
@@ -508,19 +496,18 @@
           if (numero) endereco += `, ${numero}`;
           if (data.bairro) endereco += `, ${data.bairro}`;
           endereco += `, ${data.localidade}, ${data.uf}`;
-          showStatus('✅ CEP encontrado!', 'success');
+          showStatus('CEP encontrado!', 'success');
 
           let coords = await geocodeBasic(`${endereco}, Brasil`);
-          if (!coords) coords = await geocodeWithGoogle(endereco);
           if (!coords) {
             const cityState = `${data.localidade}, ${data.uf}`;
             coords = await geocodeBasic(cityState);
-            if (coords) showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
+            if (coords) showStatus('Coordenadas aproximadas (cidade)', 'warning');
           }
 
           return { success: true, address: endereco, coords: coords || null };
         } catch (e) {
-          showStatus('⚠️ CEP inválido: ' + e.message, 'warning');
+          showStatus('CEP inválido: ' + e.message, 'warning');
           return { success: false, address: text, coords: null };
         }
       }
@@ -547,25 +534,6 @@
       return null;
     }
 
-    async function geocodeWithGoogle(address) {
-      const apiKey = 'SUACHAVEAQUI';
-      if (!apiKey || apiKey === 'SUA_CHAVE_DE_API_AQUI') return null;
-
-      try {
-        const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address + ', Brasil')}&key=${apiKey}&language=pt-BR&region=BR`;
-        const resp = await fetch(url);
-        const data = await resp.json();
-        if (data.status === 'OK' && data.results.length > 0) {
-          const loc = data.results[0].geometry.location;
-          return { lat: loc.lat, lon: loc.lng, display_name: data.results[0].formatted_address };
-        }
-      } catch (e) {
-        console.error('Erro na Google Geocoding API:', e);
-      }
-      return null;
-    }
-
-    // === Nova lógica: busca com sugestões ===
     async function addAddress() {
       if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
       
@@ -573,25 +541,23 @@
       let text = input.value.trim();
       if (!text) return;
 
-      // CEP: comportamento antigo (único resultado)
       const cepResult = await processCEP(text);
       if (cepResult?.success && cepResult.coords) {
         addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, completed: false });
         input.value = '';
         renderAddressList();
         document.getElementById('optimize-btn').style.display = 'block';
-        showStatus('✅ Endereço adicionado via CEP!', 'success');
+        showStatus('Endereço adicionado via CEP!', 'success');
         return;
       }
 
-      // Endereço textual: busca múltiplos resultados
       await searchAndSelectAddress(text);
     }
 
     async function searchAndSelectAddress(query) {
       const suggestionsContainer = document.getElementById('suggestions-container');
       suggestionsContainer.style.display = 'block';
-      suggestionsContainer.innerHTML = '<div class="status-bar status-info">🔍 Buscando endereços...</div>';
+      suggestionsContainer.innerHTML = '<div class="status-bar status-info">Buscando endereços...</div>';
 
       try {
         const cityState = `${userLocation.city}, ${userLocation.state}, Brasil`;
@@ -604,7 +570,7 @@
         const results = await resp.json();
 
         if (!results || results.length === 0) {
-          suggestionsContainer.innerHTML = '<div class="status-bar status-warning">❌ Nenhum endereço encontrado. Tente com CEP.</div>';
+          suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Nenhum endereço encontrado. Tente com CEP.</div>';
           setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
           return;
         }
@@ -631,7 +597,7 @@
         window.pendingSuggestions = results;
       } catch (e) {
         console.error('Erro ao buscar sugestões:', e);
-        suggestionsContainer.innerHTML = '<div class="status-bar status-warning">⚠️ Erro na busca. Tente novamente.</div>';
+        suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca. Tente novamente.</div>';
         setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
       }
     }
@@ -665,10 +631,9 @@
       renderAddressList();
       document.getElementById('optimize-btn').style.display = 'block';
       document.getElementById('suggestions-container').style.display = 'none';
-      showStatus('✅ Endereço adicionado!', 'success');
+      showStatus('Endereço adicionado!', 'success');
     }
 
-    // === Outras funções existentes (sem alteração) ===
     function setBaseLocation() {
       const input = document.getElementById('base-location-input');
       const text = input.value.trim();
@@ -695,10 +660,10 @@
         document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
         document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 ou CEP (em ${city})`;
         document.getElementById('departure-section').style.display = 'block';
-        showStatus(`✅ Localização base definida: ${city}${state ? ', ' + state : ''}`, 'success');
+        showStatus(`Localização base definida: ${city}${state ? ', ' + state : ''}`, 'success');
       } catch (error) {
         console.error('Erro na localização base:', error);
-        showStatus(`❌ ${error.message}`, 'warning');
+        showStatus(`${error.message}`, 'warning');
         userLocation = null;
         document.getElementById('base-location-display').textContent = 'Falha ao definir localização base.';
       }
@@ -716,9 +681,9 @@
       if (coords) {
         departure = { text: addressToUse, coords };
         document.getElementById('departure-display').textContent = coords.display_name;
-        showStatus('✅ Ponto de partida definido!', 'success');
+        showStatus('Ponto de partida definido!', 'success');
       } else {
-        showStatus('❌ Endereço de partida não encontrado.', 'warning');
+        showStatus('Endereço de partida não encontrado.', 'warning');
       }
     }
 
@@ -759,14 +724,12 @@
 
       let coords = await geocodeBasic(full);
       if (coords) return coords;
-      coords = await geocodeWithGoogle(full);
-      if (coords) return coords;
 
       if (userLocation) {
         const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
         coords = await geocodeBasic(fallback);
         if (coords) {
-          showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
+          showStatus('Coordenadas aproximadas (cidade)', 'warning');
           return coords;
         }
       }
@@ -893,56 +856,56 @@
 
         const distKm = (totalDistance / 1000).toFixed(1);
         const durMin = Math.round(totalDuration / 60);
-        showStatus(`✅ Rota otimizada! ${distKm}km · ~${durMin}min`, 'success');
+        showStatus(`Rota otimizada! ${distKm}km · ~${durMin}min`, 'success');
       } catch (e) {
         console.error('Erro na otimização:', e);
         showStatus('Erro: ' + e.message, 'warning');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '▶ Otimizar Rota';
+        btn.innerHTML = 'Otimizar Rota';
       }
     }
 
-  function renderAddressList() {
-  const list = document.getElementById('address-list');
-  if (addresses.length === 0) {
-    list.innerHTML = '';
-    return;
-  }
-  let html = '';
-  addresses.forEach((addr, i) => {
-    html += `
-      <div class="address-item">
-        <div class="address-number">${i + 1}</div>
-        <div class="address-text">${addr.text}</div>
-        <button class="btn-delete" onclick="editAddress(${addr.id})" title="Editar">✏️</button>
-        <button class="btn-delete" onclick="deleteAddress(${addr.id})" title="Excluir">×</button>
-      </div>`;
-  });
-  list.innerHTML = html;
-}
-
-function editAddress(id) {
-  const addr = addresses.find(a => a.id === id);
-  if (!addr) return;
-  
-  const newText = prompt('Editar endereço:', addr.text);
-  if (newText === null || newText.trim() === '') return; // cancelou ou vazio
-  
-  // Reutiliza a lógica de geocodificação para atualizar as coordenadas
-  (async () => {
-    showStatus('Atualizando endereço...', 'info');
-    const coords = await geocodeAddressFull(newText.trim());
-    if (coords) {
-      addr.text = newText.trim();
-      addr.coords = coords;
-      renderAddressList();
-      showStatus('✅ Endereço atualizado!', 'success');
-    } else {
-      showStatus('❌ Não foi possível localizar o novo endereço.', 'warning');
+    function renderAddressList() {
+      const list = document.getElementById('address-list');
+      if (addresses.length === 0) {
+        list.innerHTML = '';
+        return;
+      }
+      let html = '';
+      addresses.forEach((addr, i) => {
+        html += `
+          <div class="address-item">
+            <div class="address-number">${i + 1}</div>
+            <div class="address-text">${addr.text}</div>
+            <button class="btn-delete" onclick="editAddress(${addr.id})" title="Editar">✏️</button>
+            <button class="btn-delete" onclick="deleteAddress(${addr.id})" title="Excluir">×</button>
+          </div>`;
+      });
+      list.innerHTML = html;
     }
-  })();
-}
+
+    function editAddress(id) {
+      const addr = addresses.find(a => a.id === id);
+      if (!addr) return;
+      
+      const newText = prompt('Editar endereço:', addr.text);
+      if (newText === null || newText.trim() === '') return;
+      
+      (async () => {
+        showStatus('Atualizando endereço...', 'info');
+        const coords = await geocodeAddressFull(newText.trim());
+        if (coords) {
+          addr.text = newText.trim();
+          addr.coords = coords;
+          renderAddressList();
+          showStatus('Endereço atualizado!', 'success');
+        } else {
+          showStatus('Não foi possível localizar o novo endereço.', 'warning');
+        }
+      })();
+    }
+
     async function renderRoute() {
       const list = document.getElementById('route-list');
       let html = '';
@@ -955,9 +918,9 @@ function editAddress(id) {
         if (i > 0) {
           try {
             const { distance, duration } = await calculateRealDistance(optimizedRoute[i - 1].coords, a.coords);
-            distInfo = `<small style="color:#0056b3;">📍 ${(distance / 1000).toFixed(1)}km · ⏱️ ${Math.round(duration / 60)}min</small>`;
+            distInfo = `<small style="color:#0056b3;">${(distance / 1000).toFixed(1)}km · ${Math.round(duration / 60)}min</small>`;
           } catch (e) {
-            distInfo = `<small style="color:#ff5252;">⚠️ Distância não calculada</small>`;
+            distInfo = `<small style="color:#ff5252;">Distância não calculada</small>`;
           }
         }
 
@@ -965,18 +928,18 @@ function editAddress(id) {
         <div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
           <div class="route-header">
             <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
-              ${concluido ? '✓' : i === 0 ? '📍' : i}
+              ${concluido ? '✓' : i === 0 ? '' : i}
             </div>
             <div class="route-text">
               <strong>${i === 0 ? 'Ponto de Partida' : a.text}</strong>
-              ${a.coords?.display_name ? `<small>${a.coords.display_name}</small>` : '<small style="color:#ff5252;">⚠️ Localização aproximada</small>'}
+              ${a.coords?.display_name ? `<small>${a.coords.display_name}</small>` : '<small style="color:#ff5252;">Localização aproximada</small>'}
               ${distInfo}
             </div>
           </div>
           ${ativo && !concluido ? `
             <div class="route-buttons">
-              <button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">🗺️ Maps</button>
-              <button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">🧭 Waze</button>
+              <button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">Maps</button>
+              <button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">Waze</button>
               <button class="btn btn-complete btn-small" onclick="markCompleted(${i})">✓</button>
             </div>` : ''}
         </div>`;
@@ -1048,7 +1011,6 @@ function editAddress(id) {
       stopCamera();
     }
 
-    // === Voice, Camera, OCR ===
     function requestVoicePermissionAndStart() {
       if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
         return showStatus('Voz não suportada.', 'warning');
@@ -1067,13 +1029,13 @@ function editAddress(id) {
       recognition.onstart = () => {
         isListening = true;
         btn.classList.add('listening');
-        btn.textContent = '🎤 Ouvindo...';
+        btn.textContent = 'Ouvindo...';
         showStatus('Fale o endereço...', 'info');
       };
       recognition.onend = () => {
         isListening = false;
         btn.classList.remove('listening');
-        btn.textContent = '🎤 Voz';
+        btn.textContent = 'Voz';
         btn.disabled = false;
       };
       recognition.onresult = (e) => {
@@ -1180,7 +1142,7 @@ function editAddress(id) {
     }
 
     function addUserLocationManually() {
-      showStatus('📍 Minha Posição: use o botão em “Ponto de Partida”.', 'info');
+      showStatus('Minha Posição: use o botão em “Ponto de Partida”.', 'info');
     }
 
     function showStatus(message, type = 'info') {
