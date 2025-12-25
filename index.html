@@ -17,7 +17,7 @@
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-      background: #f5f5f5; /* Fundo cinza claro */
+      background: #f5f5f5;
       color: #333;
       min-height: 100vh;
       padding: 20px;
@@ -36,7 +36,7 @@
       text-align: center;
       color: white;
       margin-bottom: 20px;
-      background: #0056b3; /* Azul profundo */
+      background: #0056b3;
       padding: 15px 20px;
       border-radius: 10px 10px 0 0;
     }
@@ -208,6 +208,7 @@
       border: 1px solid #eee;
       border-radius: 8px;
       margin-bottom: 10px;
+      cursor: default;
     }
     .address-number {
       background: #0056b3;
@@ -242,7 +243,7 @@
       border: 1px solid #ddd;
     }
     .route-item.active {
-      background: #cce5ff; /* Azul claro para item ativo */
+      background: #cce5ff;
       border-color: #0056b3;
       box-shadow: 0 2px 8px rgba(0, 86, 179, 0.1);
     }
@@ -359,6 +360,13 @@
       text-align: center;
       margin-top: 10px;
     }
+    .suggestion-item {
+      background: #f0f8ff !important;
+      cursor: pointer;
+    }
+    .suggestion-item:hover {
+      background: #e3f2fd !important;
+    }
   </style>
 </head>
 <body>
@@ -426,6 +434,9 @@
       </div>
 
       <div id="address-list" class="address-list"></div>
+      
+      <!-- NOVO: container para sugestões de endereço -->
+      <div id="suggestions-container" class="address-list" style="display: none;"></div>
     </div>
 
     <div id="route-section" class="card" style="display: none;">
@@ -452,8 +463,6 @@
     let cameraStream = null;
     let scannerType = null;
     let isPhotoMode = false;
-
-    // === Cache de distâncias para OSRM ===
     let distanceCache = new Map();
 
     function getCacheKey(lat1, lon1, lat2, lon2) {
@@ -479,7 +488,7 @@
       });
     };
 
-    // === Funções de geocodificação ===
+    // === Geocodificação ===
     async function processCEP(text) {
       const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
       if (cepMatch) {
@@ -500,7 +509,7 @@
           let coords = await geocodeBasic(`${endereco}, Brasil`);
           if (!coords) coords = await geocodeWithGoogle(endereco);
           if (!coords) {
-            const cityState = `${data.localidade}, ${data.uf}, Brasil`;
+            const cityState = `${data.localidade}, ${data.uf}`;
             coords = await geocodeBasic(cityState);
             if (coords) showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
           }
@@ -552,29 +561,110 @@
       return null;
     }
 
-    async function geocodeAddressFull(address) {
-      let full = address + ', Brasil';
-      if (userLocation) {
-        full = `${address}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
+    // === Nova lógica: busca com sugestões ===
+    async function addAddress() {
+      if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
+      
+      const input = document.getElementById('address-input');
+      let text = input.value.trim();
+      if (!text) return;
+
+      // CEP: comportamento antigo (único resultado)
+      const cepResult = await processCEP(text);
+      if (cepResult?.success && cepResult.coords) {
+        addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, completed: false });
+        input.value = '';
+        renderAddressList();
+        document.getElementById('optimize-btn').style.display = 'block';
+        showStatus('✅ Endereço adicionado via CEP!', 'success');
+        return;
       }
 
-      let coords = await geocodeBasic(full);
-      if (coords) return coords;
-      coords = await geocodeWithGoogle(full);
-      if (coords) return coords;
-
-      if (userLocation) {
-        const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
-        coords = await geocodeBasic(fallback);
-        if (coords) {
-          showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
-          return coords;
-        }
-      }
-      return null;
+      // Endereço textual: busca múltiplos resultados
+      await searchAndSelectAddress(text);
     }
 
-    // === Funções de UI e lógica principal ===
+    async function searchAndSelectAddress(query) {
+      const suggestionsContainer = document.getElementById('suggestions-container');
+      suggestionsContainer.style.display = 'block';
+      suggestionsContainer.innerHTML = '<div class="status-bar status-info">🔍 Buscando endereços...</div>';
+
+      try {
+        const cityState = `${userLocation.city}, ${userLocation.state}, Brasil`;
+        const fullQuery = `${query}, ${cityState}`;
+
+        const resp = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`,
+          { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
+        );
+        const results = await resp.json();
+
+        if (!results || results.length === 0) {
+          suggestionsContainer.innerHTML = '<div class="status-bar status-warning">❌ Nenhum endereço encontrado. Tente com CEP.</div>';
+          setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
+          return;
+        }
+
+        let html = '<h4 style="margin:10px 0;color:#333;">Escolha o endereço correto:</h4>';
+        results.forEach((res, i) => {
+          const addr = res.address || {};
+          const street = addr.road || '';
+          const number = addr.house_number || '';
+          const neighborhood = addr.suburb || addr.neighbourhood || addr.city_district || '—';
+          const postcode = addr.postcode || '';
+          const city = addr.city || userLocation.city;
+          const display = `${street}${number ? ', ' + number : ''} – ${neighborhood}${postcode ? ' (CEP: ' + postcode + ')' : ''}`;
+          
+          html += `
+            <div class="address-item suggestion-item" onclick="selectSuggestion(${i})">
+              <div style="font-size:14px;">${display}</div>
+              <small style="color:#666;">${city}, ${userLocation.state}</small>
+            </div>
+          `;
+        });
+
+        suggestionsContainer.innerHTML = html;
+        window.pendingSuggestions = results;
+      } catch (e) {
+        console.error('Erro ao buscar sugestões:', e);
+        suggestionsContainer.innerHTML = '<div class="status-bar status-warning">⚠️ Erro na busca. Tente novamente.</div>';
+        setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
+      }
+    }
+
+    function selectSuggestion(index) {
+      const result = window.pendingSuggestions?.[index];
+      if (!result) return;
+
+      const addr = result.address || {};
+      let displayText = result.display_name;
+
+      if (addr.road || addr.house_number) {
+        displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
+        if (addr.suburb) displayText += `, ${addr.suburb}`;
+        if (addr.city) displayText += `, ${addr.city}`;
+        if (addr.state) displayText += ` - ${addr.state}`;
+      }
+
+      addresses.push({
+        id: Date.now(),
+        text: displayText,
+        coords: {
+          lat: parseFloat(result.lat),
+          lon: parseFloat(result.lon),
+          display_name: result.display_name
+        },
+        completed: false
+      });
+
+      document.getElementById('address-input').value = '';
+      renderAddressList();
+      document.getElementById('optimize-btn').style.display = 'block';
+      document.getElementById('suggestions-container').style.display = 'none';
+      showStatus('✅ Endereço adicionado!', 'success');
+    }
+
+    // === Outras funções existentes (sem alteração) ===
     function setBaseLocation() {
       const input = document.getElementById('base-location-input');
       const text = input.value.trim();
@@ -657,30 +747,26 @@
       );
     }
 
-    async function addAddress() {
-      if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
-      const input = document.getElementById('address-input');
-      let text = input.value.trim();
-      if (!text) return;
-
-      const cepResult = await processCEP(text);
-      if (cepResult?.success && cepResult.coords) {
-        addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, completed: false });
-        input.value = '';
-        renderAddressList();
-        document.getElementById('optimize-btn').style.display = 'block';
-        showStatus('✅ Endereço adicionado via CEP!', 'success');
-        return;
+    async function geocodeAddressFull(address) {
+      let full = address + ', Brasil';
+      if (userLocation) {
+        full = `${address}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
       }
 
-      const coords = await geocodeAddressFull(text);
-      if (!coords) return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
+      let coords = await geocodeBasic(full);
+      if (coords) return coords;
+      coords = await geocodeWithGoogle(full);
+      if (coords) return coords;
 
-      addresses.push({ id: Date.now(), text: text, coords, completed: false });
-      input.value = '';
-      renderAddressList();
-      document.getElementById('optimize-btn').style.display = 'block';
-      showStatus('✅ Endereço adicionado!', 'success');
+      if (userLocation) {
+        const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
+        coords = await geocodeBasic(fallback);
+        if (coords) {
+          showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
+          return coords;
+        }
+      }
+      return null;
     }
 
     function deleteAddress(id) {
@@ -716,7 +802,7 @@
                 Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       const distance = R * c;
-      const duration = distance / 13.89; // ~50 km/h média
+      const duration = distance / 13.89;
       const result = { distance, duration };
       distanceCache.set(key, result);
       return result;
@@ -932,6 +1018,7 @@
       document.getElementById('departure-input').value = '';
       document.getElementById('departure-display').textContent = 'Nenhum ponto de partida definido.';
       document.getElementById('address-input').value = '';
+      document.getElementById('suggestions-container').style.display = 'none';
       stopCamera();
     }
 
