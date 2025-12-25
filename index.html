@@ -899,24 +899,46 @@
       }
     }
 
-    function renderAddressList() {
-      const list = document.getElementById('address-list');
-      if (addresses.length === 0) {
-        list.innerHTML = '';
-        return;
-      }
-      let html = '';
-      addresses.forEach((addr, i) => {
-        html += `
-          <div class="address-item">
-            <div class="address-number">${i + 1}</div>
-            <div class="address-text">${addr.text}</div>
-            <button class="btn-delete" onclick="deleteAddress(${addr.id})">×</button>
-          </div>`;
-      });
-      list.innerHTML = html;
-    }
+  function renderAddressList() {
+  const list = document.getElementById('address-list');
+  if (addresses.length === 0) {
+    list.innerHTML = '';
+    return;
+  }
+  let html = '';
+  addresses.forEach((addr, i) => {
+    html += `
+      <div class="address-item">
+        <div class="address-number">${i + 1}</div>
+        <div class="address-text">${addr.text}</div>
+        <button class="btn-delete" onclick="editAddress(${addr.id})" title="Editar">✏️</button>
+        <button class="btn-delete" onclick="deleteAddress(${addr.id})" title="Excluir">×</button>
+      </div>`;
+  });
+  list.innerHTML = html;
+}
 
+function editAddress(id) {
+  const addr = addresses.find(a => a.id === id);
+  if (!addr) return;
+  
+  const newText = prompt('Editar endereço:', addr.text);
+  if (newText === null || newText.trim() === '') return; // cancelou ou vazio
+  
+  // Reutiliza a lógica de geocodificação para atualizar as coordenadas
+  (async () => {
+    showStatus('Atualizando endereço...', 'info');
+    const coords = await geocodeAddressFull(newText.trim());
+    if (coords) {
+      addr.text = newText.trim();
+      addr.coords = coords;
+      renderAddressList();
+      showStatus('✅ Endereço atualizado!', 'success');
+    } else {
+      showStatus('❌ Não foi possível localizar o novo endereço.', 'warning');
+    }
+  })();
+}
     async function renderRoute() {
       const list = document.getElementById('route-list');
       let html = '';
