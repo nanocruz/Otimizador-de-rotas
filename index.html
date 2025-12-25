@@ -1,447 +1,443 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Otimizador de Rotas</title>
-    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-    <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            background: #FFB80C;
-            min-height: 100vh;
-            padding: 20px;
-            padding-bottom: 40px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .container {
-            max-width: 100%;
-            width: 100%;
-            margin: 0 auto;
-            padding: 0 10px;
-        }
-        .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 20px;
-        }
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-        .card {
-            background: white;
-            border-radius: 20px;
-            padding: 20px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            margin-bottom: 20px;
-        }
-        .status-bar {
-            padding: 12px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            font-size: 14px;
-        }
-        .status-success {
-            background: #d4edda;
-            color: #155724;
-            border: 2px solid #c3e6cb;
-        }
-        .status-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 2px solid #bee5eb;
-        }
-        .status-warning {
-            background: #fff3cd;
-            color: #856404;
-            border: 2px solid #ffeaa7;
-        }
-        .tip-box {
-            background: #e3f2fd;
-            border-left: 4px solid #2196f3;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-        .tip-box strong {
-            display: block;
-            margin-bottom: 5px;
-            color: #1565c0;
-        }
-        .tip-box small {
-            display: block;
-            margin-top: 8px;
-            font-size: 12px;
-            color: #555;
-        }
-        .input-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        input[type="text"] {
-            flex: 1;
-            padding: 15px;
-            border: 2px solid #ddd;
-            border-radius: 10px;
-            font-size: 16px;
-        }
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        .btn {
-            padding: 15px 25px;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-        .btn-primary:active {
-            transform: scale(0.95);
-            background: #5568d3;
-        }
-        .btn-voice {
-            background: #f0f0f0;
-            color: #333;
-            flex: 1;
-        }
-        .btn-voice.listening {
-            background: #ef5350;
-            color: white;
-            animation: pulse 1.5s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        .btn-optimize {
-            width: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            font-size: 18px;
-            padding: 18px;
-        }
-        .btn-optimize:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .btn-ok {
-            padding: 10px 15px;
-            font-size: 14px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            min-width: 60px;
-            flex-shrink: 0;
-        }
-        .btn-ok:hover {
-            background: #45a049;
-        }
-        .btn-small {
-            padding: 10px 15px;
-            font-size: 14px;
-        }
-        .buttons-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-        .address-list {
-            margin-bottom: 20px;
-        }
-        .address-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            margin-bottom: 10px;
-        }
-        .address-number {
-            background: #667eea;
-            color: white;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            flex-shrink: 0;
-        }
-        .address-text {
-            flex: 1;
-            font-size: 14px;
-        }
-        .btn-delete {
-            background: #ff5252;
-            color: white;
-            width: 35px;
-            height: 35px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            flex-shrink: 0;
-        }
-        .route-item {
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            border: 2px solid #ddd;
-        }
-        .route-item.active {
-            background: #e8eaf6;
-            border-color: #667eea;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
-        }
-        .route-item.completed {
-            background: #e8f5e9;
-            border-color: #4caf50;
-        }
-        .route-header {
-            display: flex;
-            align-items: flex-start;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        .route-number {
-            width: 35px;
-            height: 35px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            flex-shrink: 0;
-        }
-        .route-number.active {
-            background: #667eea;
-            color: white;
-        }
-        .route-number.completed {
-            background: #4caf50;
-            color: white;
-        }
-        .route-text {
-            flex: 1;
-        }
-        .route-text strong {
-            display: block;
-            margin-bottom: 5px;
-            font-size: 16px;
-        }
-        .route-text small {
-            color: #666;
-            font-size: 13px;
-        }
-        .route-buttons {
-            display: grid;
-            grid-template-columns: 1fr 1fr auto;
-            gap: 8px;
-        }
-        .btn-maps {
-            background: #4285f4;
-            color: white;
-        }
-        .btn-waze {
-            background: #00d9ff;
-            color: white;
-        }
-        .btn-complete {
-            background: #4caf50;
-            color: white;
-            width: 45px;
-        }
-        .progress-bar {
-            background: #e8eaf6;
-            padding: 15px;
-            border-radius: 10px;
-            text-align: center;
-            margin-top: 20px;
-        }
-        .progress-bar strong {
-            color: #667eea;
-            font-size: 18px;
-        }
-        .empty-state {
-            text-align: center;
-            padding: 40px 20px;
-            color: #999;
-        }
-        .empty-state svg {
-            width: 80px;
-            height: 80px;
-            opacity: 0.3;
-            margin-bottom: 15px;
-        }
-        #camera-container {
-            margin-bottom: 20px;
-        }
-        #camera-video {
-            width: 100%;
-            border-radius: 10px;
-            margin-bottom: 10px;
-        }
-        .camera-buttons {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-        .btn-capture {
-            background: #4caf50;
-            color: white;
-        }
-        .btn-cancel {
-            background: #f44336;
-            color: white;
-        }
-        .header-actions {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        .btn-reset {
-            background: #f44336;
-            color: white;
-        }
-        .base-location-section {
-            background: #fff8e1;
-            border: 2px dashed #ffc107;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-        .base-location-input-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        .base-location-input-group input {
-            flex: 1;
-        }
-        .base-location-display {
-            font-size: 14px;
-            color: #555;
-            text-align: center;
-            margin-top: 10px;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Otimizador de Rotas</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      background: #fdf6ec; /* Amarelo creme suave */
+      color: #333;
+      min-height: 100vh;
+      padding: 20px;
+      padding-bottom: 120px; /* Espaço para botão fixo */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .container {
+      max-width: 100%;
+      width: 100%;
+      margin: 0 auto;
+      padding: 0 10px;
+    }
+    .header {
+      text-align: center;
+      color: #444;
+      margin-bottom: 20px;
+    }
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .card {
+      background: white;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.1);
+      margin-bottom: 20px;
+    }
+    .status-bar {
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    .status-success {
+      background: #d4edda;
+      color: #155724;
+      border: 2px solid #c3e6cb;
+    }
+    .status-info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 2px solid #bee5eb;
+    }
+    .status-warning {
+      background: #fff3cd;
+      color: #856404;
+      border: 2px solid #ffeaa7;
+    }
+    .tip-box {
+      background: #e3f2fd;
+      border-left: 4px solid #2196f3;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .tip-box strong {
+      display: block;
+      margin-bottom: 5px;
+      color: #1565c0;
+    }
+    .tip-box small {
+      display: block;
+      margin-top: 8px;
+      font-size: 12px;
+      color: #555;
+    }
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 15px;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    .btn {
+      padding: 15px 25px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn:active {
+      transform: scale(0.98);
+      opacity: 0.95;
+    }
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+    .btn-voice {
+      background: #f0f0f0;
+      color: #333;
+      flex: 1;
+    }
+    .btn-voice.listening {
+      background: #ef5350;
+      color: white;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    .btn-optimize {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      right: 20px;
+      width: auto;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 18px;
+      padding: 18px;
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+      z-index: 1000;
+    }
+    .btn-optimize:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .spinner {
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      width: 18px;
+      height: 18px;
+      animation: spin 1s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .btn-ok {
+      padding: 10px 15px;
+      font-size: 14px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      min-width: 60px;
+      flex-shrink: 0;
+    }
+    .btn-small {
+      padding: 10px 15px;
+      font-size: 14px;
+    }
+    .buttons-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .address-list {
+      margin-bottom: 20px;
+    }
+    .address-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    .address-number {
+      background: #667eea;
+      color: white;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    .address-text {
+      flex: 1;
+      font-size: 14px;
+    }
+    .btn-delete {
+      background: #ff5252;
+      color: white;
+      width: 35px;
+      height: 35px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .route-item {
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      border: 2px solid #ddd;
+    }
+    .route-item.active {
+      background: #e8eaf6;
+      border-color: #667eea;
+      box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
+    }
+    .route-item.completed {
+      background: #e8f5e9;
+      border-color: #4caf50;
+    }
+    .route-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    .route-number {
+      width: 35px;
+      height: 35px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+    .route-number.active {
+      background: #667eea;
+      color: white;
+    }
+    .route-number.completed {
+      background: #4caf50;
+      color: white;
+    }
+    .route-text {
+      flex: 1;
+    }
+    .route-text strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 16px;
+    }
+    .route-text small {
+      color: #666;
+      font-size: 13px;
+    }
+    .route-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 8px;
+    }
+    .btn-maps {
+      background: #4285f4;
+      color: white;
+    }
+    .btn-waze {
+      background: #00d9ff;
+      color: white;
+    }
+    .btn-complete {
+      background: #4caf50;
+      color: white;
+      width: 45px;
+    }
+    .progress-bar {
+      background: #e8eaf6;
+      padding: 15px;
+      border-radius: 10px;
+      text-align: center;
+      margin-top: 20px;
+    }
+    .progress-bar strong {
+      color: #667eea;
+      font-size: 18px;
+    }
+    #camera-container {
+      margin-bottom: 20px;
+    }
+    #camera-video {
+      width: 100%;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    .camera-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .btn-capture {
+      background: #4caf50;
+      color: white;
+    }
+    .btn-cancel {
+      background: #f44336;
+      color: white;
+    }
+    .header-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .btn-reset {
+      background: #f44336;
+      color: white;
+    }
+    .base-location-section {
+      background: #fff8e1;
+      border: 2px dashed #ffc107;
+      border-radius: 10px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+    .base-location-display {
+      font-size: 14px;
+      color: #555;
+      text-align: center;
+      margin-top: 10px;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
-                </svg>
-                Otimizador de Rotas
-            </h1>
-        </div>
-        <div id="status-container"></div>
-        <div id="base-location-section" class="card base-location-section">
-            <h3 style="margin-bottom: 10px; color: #333;">Localização Base</h3>
-            <p style="margin-bottom: 15px; font-size: 14px; color: #555;">Defina a cidade/região onde você deseja adicionar os endereços.</p>
-            <div class="base-location-input-group">
-                <input type="text" id="base-location-input" placeholder="Ex: São Paulo, SP">
-                <button class="btn btn-ok" onclick="setBaseLocation()">✅</button>
-            </div>
-            <div id="base-location-display" class="base-location-display">
-                Nenhuma localização base definida. Por favor, defina para continuar.
-            </div>
-        </div>
-        <div id="departure-section" class="card" style="display: none;">
-            <h3 style="margin-bottom: 10px; color: #333;">📍 Ponto de Partida</h3>
-            <p style="margin-bottom: 15px; font-size: 14px; color: #555;">De onde você vai iniciar a rota?</p>
-            <div class="input-group">
-                <input type="text" id="departure-input" placeholder="Ex: Av. Paulista, 1000 ou CEP 01310-100">
-                <button class="btn btn-primary" onclick="setDepartureAddress()">+</button>
-            </div>
-            <button class="btn btn-voice" style="width:100%; margin-top:10px;" onclick="setDepartureCurrentLocation()">
-                📍 Usar Minha Localização Atual
-            </button>
-            <div id="departure-display" class="base-location-display" style="margin-top:10px;">
-                Nenhum ponto de partida definido.
-            </div>
-        </div>
-        <div id="add-section" class="card">
-            <h2 style="margin-bottom: 15px; color: #333;">Adicionar Endereços</h2>
-            <div class="tip-box">
-                <strong>💡 Dica de uso:</strong>
-                Use endereços completos ou CEP para melhores resultados!
-                <small>Exemplos: "Av. Paulista, 1578, São Paulo, SP" • "85855-185" • "85855185, 555" • "CEP: 85855-185"</small>
-            </div>
-            <div class="input-group">
-                <input type="text" id="address-input" placeholder="Ex: Av. Paulista, 1578 ou CEP 01310-100">
-                <button class="btn btn-primary" onclick="addAddress()">+</button>
-            </div>
-            <div class="buttons-grid">
-                <button class="btn btn-voice" id="voice-btn" onclick="requestVoicePermissionAndStart()">
-                    🎤 Voz
-                </button>
-                <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('photo')">
-                    📷 Foto
-                </button>
-                <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('barcode')">
-                    📊 Código de Barras
-                </button>
-                <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('qr')">
-                    🔲 QR Code
-                </button>
-                <button class="btn btn-voice" onclick="addUserLocationManually()">
-                    📍 Minha Posição
-                </button>
-            </div>
-            <div id="camera-container" style="display: none;">
-                <video id="camera-video" autoplay playsinline></video>
-                <div class="camera-buttons" id="camera-buttons">
-                </div>
-            </div>
-            <div id="address-list" class="address-list"></div>
-            <button id="optimize-btn" class="btn btn-optimize" onclick="optimizeRoute()" style="display: none;">
-                ▶ Otimizar Rota
-            </button>
-        </div>
-        <div id="route-section" class="card" style="display: none;">
-            <div class="header-actions">
-                <h2 style="color: #333;">Rota Otimizada</h2>
-                <button class="btn btn-reset btn-small" onclick="resetRoute()">✕ Reiniciar</button>
-            </div>
-            <div id="route-list"></div>
-            <div id="progress-bar" class="progress-bar"></div>
-        </div>
+  <div class="container">
+    <div class="header">
+      <h1>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+        </svg>
+        Otimizador de Rotas
+      </h1>
     </div>
-<script>
+
+    <div id="status-container"></div>
+
+    <div id="base-location-section" class="card base-location-section">
+      <h3 style="margin-bottom: 10px; color: #333;">Localização Base</h3>
+      <p style="margin-bottom: 15px; font-size: 14px; color: #555;">Defina a cidade/região onde você deseja adicionar os endereços.</p>
+      <div class="base-location-input-group">
+        <input type="text" id="base-location-input" placeholder="Ex: São Paulo, SP" />
+        <button class="btn btn-ok" onclick="setBaseLocation()">✅</button>
+      </div>
+      <div id="base-location-display" class="base-location-display">
+        Nenhuma localização base definida. Por favor, defina para continuar.
+      </div>
+    </div>
+
+    <div id="departure-section" class="card" style="display: none;">
+      <h3 style="margin-bottom: 10px; color: #333;">📍 Ponto de Partida</h3>
+      <p style="margin-bottom: 15px; font-size: 14px; color: #555;">De onde você vai iniciar a rota?</p>
+      <div class="input-group">
+        <input type="text" id="departure-input" placeholder="Ex: Av. Paulista, 1000 ou CEP 01310-100" />
+        <button class="btn btn-primary" onclick="setDepartureAddress()">+</button>
+      </div>
+      <button class="btn btn-voice" style="width:100%; margin-top:10px;" onclick="setDepartureCurrentLocation()">
+        📍 Usar Minha Localização Atual
+      </button>
+      <div id="departure-display" class="base-location-display" style="margin-top:10px;">
+        Nenhum ponto de partida definido.
+      </div>
+    </div>
+
+    <div id="add-section" class="card">
+      <h2 style="margin-bottom: 15px; color: #333;">Adicionar Endereços</h2>
+      <div class="tip-box">
+        <strong>💡 Dica de uso:</strong>
+        Use endereços completos ou CEP para melhores resultados!
+        <small>Exemplos: "Av. Paulista, 1578, São Paulo, SP" • "85855-185" • "85855185, 555" • "CEP: 85855-185"</small>
+      </div>
+      <div class="input-group">
+        <input type="text" id="address-input" placeholder="Ex: Av. Paulista, 1578 ou CEP 01310-100" />
+        <button class="btn btn-primary" onclick="addAddress()">+</button>
+      </div>
+      <div class="buttons-grid">
+        <button class="btn btn-voice" id="voice-btn" onclick="requestVoicePermissionAndStart()">🎤 Voz</button>
+        <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('photo')">📷 Foto</button>
+        <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('barcode')">📊 Código</button>
+        <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('qr')">🔲 QR</button>
+        <button class="btn btn-voice" onclick="addUserLocationManually()">📍 Minha Posição</button>
+      </div>
+
+      <div id="camera-container" style="display: none;">
+        <video id="camera-video" autoplay playsinline></video>
+        <div class="camera-buttons" id="camera-buttons"></div>
+      </div>
+
+      <div id="address-list" class="address-list"></div>
+    </div>
+
+    <div id="route-section" class="card" style="display: none;">
+      <div class="header-actions">
+        <h2 style="color: #333;">Rota Otimizada</h2>
+        <button class="btn btn-reset btn-small" onclick="resetRoute()">✕ Reiniciar</button>
+      </div>
+      <div id="route-list"></div>
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
+
+    <button id="optimize-btn" class="btn btn-optimize" onclick="optimizeRoute()" style="display: none;">
+      ▶ Otimizar Rota
+    </button>
+  </div>
+
+  <script>
     let addresses = [];
     let optimizedRoute = [];
     let activeIndex = 0;
@@ -452,735 +448,629 @@
     let scannerType = null;
     let isPhotoMode = false;
 
-    // === Cache para distâncias reais (OSRM) ===
+    // === Cache de distâncias para OSRM ===
     let distanceCache = new Map();
 
     function getCacheKey(lat1, lon1, lat2, lon2) {
-        // Garante chave única e simétrica: (A,B) == (B,A)
-        if (lat1 < lat2 || (lat1 === lat2 && lon1 < lon2)) {
-            return `${lat1},${lon1}|${lat2},${lon2}`;
-        } else {
-            return `${lat2},${lon2}|${lat1},${lon1}`;
-        }
+      if (lat1 < lat2 || (lat1 === lat2 && lon1 < lon2)) {
+        return `${lat1},${lon1}|${lat2},${lon2}`;
+      } else {
+        return `${lat2},${lon2}|${lat1},${lon1}`;
+      }
     }
 
     window.onload = () => {
-        document.getElementById('address-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') addAddress();
-        });
-        document.getElementById('base-location-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                setBaseLocation();
-            }
-        });
-        document.getElementById('departure-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') setDepartureAddress();
-        });
+      document.getElementById('address-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') addAddress();
+      });
+      document.getElementById('base-location-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          setBaseLocation();
+        }
+      });
+      document.getElementById('departure-input').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') setDepartureAddress();
+      });
     };
 
-        // Função para processar CEP
-async function processCEP(text) {
-  const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
-  if (cepMatch) {
-    const cep = cepMatch[1] + cepMatch[2];
-    const numero = cepMatch[3] || '';
-    showStatus('🔍 Buscando CEP...', 'info');
-    try {
-      const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-      const data = await resp.json();
-      if (data.erro) {
-        throw new Error('CEP não encontrado');
+    // === Funções de geocodificação ===
+    async function processCEP(text) {
+      const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
+      if (cepMatch) {
+        const cep = cepMatch[1] + cepMatch[2];
+        const numero = cepMatch[3] || '';
+        showStatus('🔍 Buscando CEP...', 'info');
+        try {
+          const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+          const data = await resp.json();
+          if (data.erro) throw new Error('CEP não encontrado');
+
+          let endereco = data.logradouro || '';
+          if (numero) endereco += `, ${numero}`;
+          if (data.bairro) endereco += `, ${data.bairro}`;
+          endereco += `, ${data.localidade}, ${data.uf}`;
+          showStatus('✅ CEP encontrado!', 'success');
+
+          let coords = await geocodeBasic(`${endereco}, Brasil`);
+          if (!coords) coords = await geocodeWithGoogle(endereco);
+          if (!coords) {
+            const cityState = `${data.localidade}, ${data.uf}, Brasil`;
+            coords = await geocodeBasic(cityState);
+            if (coords) showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
+          }
+
+          return { success: true, address: endereco, coords: coords || null };
+        } catch (e) {
+          showStatus('⚠️ CEP inválido: ' + e.message, 'warning');
+          return { success: false, address: text, coords: null };
+        }
+      }
+      return null;
+    }
+
+    async function geocodeBasic(address) {
+      try {
+        const resp = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1&accept-language=pt-BR`,
+          { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
+        );
+        const data = await resp.json();
+        if (data?.length > 0) {
+          return {
+            lat: parseFloat(data[0].lat),
+            lon: parseFloat(data[0].lon),
+            display_name: data[0].display_name
+          };
+        }
+      } catch (e) {
+        console.error('Erro na geocodificação (Nominatim):', e);
+      }
+      return null;
+    }
+
+    async function geocodeWithGoogle(address) {
+      const apiKey = 'AIzaSyBk-hJ1ZxBKVCk3Q7C_h_ah7jZbUcqK2qA';
+      if (!apiKey || apiKey === 'SUA_CHAVE_DE_API_AQUI') return null;
+
+      try {
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address + ', Brasil')}&key=${apiKey}&language=pt-BR&region=BR`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (data.status === 'OK' && data.results.length > 0) {
+          const loc = data.results[0].geometry.location;
+          return { lat: loc.lat, lon: loc.lng, display_name: data.results[0].formatted_address };
+        }
+      } catch (e) {
+        console.error('Erro na Google Geocoding API:', e);
+      }
+      return null;
+    }
+
+    async function geocodeAddressFull(address) {
+      let full = address + ', Brasil';
+      if (userLocation) {
+        full = `${address}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
       }
 
-      let endereco = data.logradouro || '';
-      if (numero) endereco += `, ${numero}`;
-      if (data.bairro) endereco += `, ${data.bairro}`;
-      endereco += `, ${data.localidade}, ${data.uf}`;
-      showStatus('✅ CEP encontrado!', 'success');
+      let coords = await geocodeBasic(full);
+      if (coords) return coords;
+      coords = await geocodeWithGoogle(full);
+      if (coords) return coords;
 
-      // 🔍 Agora tentamos obter coordenadas diretamente do CEP!
-      // Etapa 1: Tentar Nominatim com endereço completo
-      let query = `${endereco}, Brasil`;
-      let coords = await geocodeBasic(query);
-
-      // Etapa 2 (opcional): Se falhar, tentar Google (se disponível)
-      if (!coords) {
-        coords = await geocodeWithGoogle(endereco);
-      }
-
-      // Etapa 3: Se ainda falhar, usar centro da cidade como fallback (com ViaCEP + Nominatim por cidade/UF)
-      if (!coords) {
-        const cityState = `${data.localidade}, ${data.uf}, Brasil`;
-        coords = await geocodeBasic(cityState);
+      if (userLocation) {
+        const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
+        coords = await geocodeBasic(fallback);
         if (coords) {
           showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
+          return coords;
         }
       }
-
-      return {
-        success: true,
-        address: endereco,
-        coords: coords || null
-      };
-    } catch (e) {
-      showStatus('⚠️ CEP inválido: ' + e.message, 'warning');
-      return {
-        success: false,
-        address: text,
-        coords: null
-      };
+      return null;
     }
-  }
-  return null; // Não é um CEP
-}
 
-// ================================
-// Nova função auxiliar: geocodeBasic (Nominatim apenas)
-// ================================
-async function geocodeBasic(address) {
-  try {
-    const resp = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1&accept-language=pt-BR`,
-      { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-    );
-    const data = await resp.json();
-    if (data?.length > 0) {
-      return {
-        lat: parseFloat(data[0].lat),
-        lon: parseFloat(data[0].lon),
-        display_name: data[0].display_name
-      };
+    // === Funções de UI e lógica principal ===
+    function setBaseLocation() {
+      const input = document.getElementById('base-location-input');
+      const text = input.value.trim();
+      if (!text) return showStatus('Informe cidade e estado.', 'warning');
+      geocodeBaseLocation(text);
     }
-  } catch (e) {
-    console.error('Erro na geocodificação (Nominatim):', e);
-  }
-  return null;
-}
-        // Função para definir a localização base
-        function setBaseLocation() {
-            const input = document.getElementById('base-location-input');
-            const locationText = input.value.trim();
-            if (!locationText) {
-                showStatus('Informe cidade e estado.', 'warning');
-                return;
-            }
-            geocodeBaseLocation(locationText);
-        }
 
-        // Função para geocodificar a localização base
-        async function geocodeBaseLocation(locationText) {
-            showStatus('Verificando localização base...', 'info');
-            try {
-                const response = await fetch(
-                    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}, Brasil&limit=1&addressdetails=1&accept-language=pt-BR`,
-                    { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-                );
-                const data = await response.json();
-                if (!data || data.length === 0) {
-                    throw new Error('Nenhum resultado encontrado. Tente: "Cidade, Estado" (ex: São Paulo, SP)');
-                }
-                const addr = data[0].address || {};
-                const city = addr.city || addr.town || addr.municipality || addr.village || '';
-                const state = addr.state || '';
-                if (!city) {
-                    throw new Error('Cidade não identificada nos resultados.');
-                }
-                userLocation = { city, state };
-                document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
-                document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 ou CEP (em ${city})`;
-                document.getElementById('departure-section').style.display = 'block';
-                showStatus(`✅ Localização base: ${city}${state ? ', ' + state : ''}`, 'success');
-            } catch (error) {
-                console.error("Erro ao geocodificar localização base:", error);
-                showStatus(`❌ ${error.message}`, 'warning');
-                userLocation = null;
-                document.getElementById('base-location-display').textContent = 'Falha ao definir localização base. Tente novamente.';
-            }
-        }
+    async function geocodeBaseLocation(locationText) {
+      showStatus('Verificando localização base...', 'info');
+      try {
+        const data = await (await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText + ', Brasil')}&limit=1&addressdetails=1&accept-language=pt-BR`,
+          { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
+        )).json();
 
-        // Função para definir o ponto de partida por endereço
-async function setDepartureAddress() {
-    const input = document.getElementById('departure-input');
-    const text = input.value.trim();
-    if (!text) return showStatus('Digite um endereço de partida.', 'warning');
-    const cepResult = await processCEP(text);
-    let addressToGeocode = text;
-    let useBase = true;
-    if (cepResult && cepResult.success) {
-        addressToGeocode = cepResult.address;
-        useBase = false;
+        if (!data?.length) throw new Error('Nenhum resultado encontrado. Use “Cidade, Estado”.');
+
+        const addr = data[0].address || {};
+        const city = addr.city || addr.town || addr.municipality || addr.village || '';
+        const state = addr.state || '';
+        if (!city) throw new Error('Cidade não identificada.');
+
+        userLocation = { city, state };
+        document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
+        document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 ou CEP (em ${city})`;
+        document.getElementById('departure-section').style.display = 'block';
+        showStatus(`✅ Localização base definida: ${city}${state ? ', ' + state : ''}`, 'success');
+      } catch (error) {
+        console.error('Erro na localização base:', error);
+        showStatus(`❌ ${error.message}`, 'warning');
+        userLocation = null;
+        document.getElementById('base-location-display').textContent = 'Falha ao definir localização base.';
+      }
     }
-    const coords = await geocodeAddressFull(addressToGeocode, useBase);
-    if (coords) {
-        departure = { text: addressToGeocode, coords };
+
+    async function setDepartureAddress() {
+      const input = document.getElementById('departure-input');
+      const text = input.value.trim();
+      if (!text) return showStatus('Digite um endereço de partida.', 'warning');
+
+      const cepResult = await processCEP(text);
+      const addressToUse = cepResult?.success ? cepResult.address : text;
+      const coords = await geocodeAddressFull(addressToUse);
+
+      if (coords) {
+        departure = { text: addressToUse, coords };
         document.getElementById('departure-display').textContent = coords.display_name;
         showStatus('✅ Ponto de partida definido!', 'success');
-    } else {
+      } else {
         showStatus('❌ Endereço de partida não encontrado.', 'warning');
+      }
     }
-}
-        // Função para definir o ponto de partida usando a localização atual
-        function setDepartureCurrentLocation() {
-            if (!navigator.geolocation) return showStatus('Geolocalização não suportada.', 'warning');
-            showStatus('Obtendo sua localização...', 'info');
-            navigator.geolocation.getCurrentPosition(
-                async (pos) => {
-                    const { latitude, longitude } = pos.coords;
-                    try {
-                        const resp = await fetch(
-                            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=pt-BR`,
-                            { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-                        );
-                        const data = await resp.json();
-                        const name = data.display_name || `Lat: ${latitude}, Lng: ${longitude}`;
-                        departure = {
-                            text: "Minha localização atual",
-                            coords: { lat: latitude, lon: longitude, display_name: name }
-                        };
-                        document.getElementById('departure-display').textContent = name;
-                        showStatus('Partida definida com sucesso!', 'success');
-                    } catch (e) {
-                        departure = {
-                            text: "Minha localização atual",
-                            coords: { lat: latitude, lon: longitude, display_name: `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})` }
-                        };
-                        document.getElementById('departure-display').textContent = departure.coords.display_name;
-                        showStatus('Localização usada sem nome.', 'info');
-                    }
-                },
-                (err) => showStatus('Erro na localização: ' + err.message, 'warning'),
-                { timeout: 10000 }
-            );
-        }
 
-        // Função CORRIGIDA para adicionar endereço
-async function addAddress() {
-  if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
-  const input = document.getElementById('address-input');
-  let text = input.value.trim();
-  if (!text) return;
-
-  // Tentar extrair CEP primeiro
-  const cepResult = await processCEP(text);
-  if (cepResult && cepResult.success && cepResult.coords) {
-    // ✅ Já temos coordenadas do CEP, adicionar diretamente
-    addresses.push({
-      id: Date.now(),
-      text: cepResult.address,
-      coords: cepResult.coords,
-      completed: false
-    });
-    input.value = '';
-    renderAddressList();
-    if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
-    showStatus('✅ Endereço adicionado via CEP!', 'success');
-    return;
-  }
-
-  // Caso contrário, tentar geocodificar normalmente
-  const coords = await geocodeAddressFull(text);
-  if (!coords) {
-    return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
-  }
-
-  addresses.push({
-    id: Date.now(),
-    text: text,
-    coords,
-    completed: false
-  });
-  input.value = '';
-  renderAddressList();
-  if (addresses.length > 0) document.getElementById('optimize-btn').style.display = 'block';
-  showStatus('✅ Endereço adicionado!', 'success');
-}
-
-// ================================
-// Nova função: geocodeWithGoogle
-// ================================
-async function geocodeWithGoogle(address) {
-  const apiKey = 'AIzaSyBk-hJ1ZxBKVCk3Q7C_h_ah7jZbUcqK2qA'; // ⚠️ Substitua por sua chave válida
-  if (!apiKey || apiKey === 'SUA_CHAVE_DE_API_AQUI') {
-    console.warn('Chave da Google Maps API não configurada. Pulando Google Geocoding.');
-    return null;
-  }
-
-  try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address + ', Brasil')}&key=${apiKey}&language=pt-BR&region=BR`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-    if (data.status === 'OK' && data.results.length > 0) {
-      const loc = data.results[0].geometry.location;
-      const name = data.results[0].formatted_address;
-      return {
-        lat: loc.lat,
-        lon: loc.lng,
-        display_name: name
-      };
-    } else {
-      console.warn('Google Geocoding não retornou resultados:', data.status);
+    function setDepartureCurrentLocation() {
+      if (!navigator.geolocation) return showStatus('Geolocalização não suportada.', 'warning');
+      showStatus('Obtendo sua localização...', 'info');
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const { latitude, longitude } = pos.coords;
+          try {
+            const data = await (await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=pt-BR`,
+              { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
+            )).json();
+            const name = data.display_name || `Lat: ${latitude}, Lng: ${longitude}`;
+            departure = { text: 'Minha localização atual', coords: { lat: latitude, lon: longitude, display_name: name } };
+            document.getElementById('departure-display').textContent = name;
+            showStatus('Partida definida com sucesso!', 'success');
+          } catch (e) {
+            departure = {
+              text: 'Minha localização atual',
+              coords: { lat: latitude, lon: longitude, display_name: `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})` }
+            };
+            document.getElementById('departure-display').textContent = departure.coords.display_name;
+            showStatus('Localização usada sem nome.', 'info');
+          }
+        },
+        (err) => showStatus('Erro na localização: ' + err.message, 'warning'),
+        { timeout: 10000 }
+      );
     }
-  } catch (e) {
-    console.error('Erro na Google Geocoding API:', e);
-  }
-  return null;
-}
 
-        // Função para deletar um endereço
-        function deleteAddress(id) {
-            addresses = addresses.filter(a => a.id !== id);
-            renderAddressList();
-            if (addresses.length === 0) {
-                document.getElementById('optimize-btn').style.display = 'none';
-            }
-        }
+    async function addAddress() {
+      if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
+      const input = document.getElementById('address-input');
+      let text = input.value.trim();
+      if (!text) return;
 
-        // Função para geocodificação
-async function geocodeAddressFull(address) {
-  let fullAddress = address;
-  if (userLocation) {
-    fullAddress += `, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-  } else {
-    fullAddress += ', Brasil';
-  }
+      const cepResult = await processCEP(text);
+      if (cepResult?.success && cepResult.coords) {
+        addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, completed: false });
+        input.value = '';
+        renderAddressList();
+        document.getElementById('optimize-btn').style.display = 'block';
+        showStatus('✅ Endereço adicionado via CEP!', 'success');
+        return;
+      }
 
-  // 1. Tenta Nominatim
-  let coords = await geocodeBasic(fullAddress);
-  if (coords) return coords;
+      const coords = await geocodeAddressFull(text);
+      if (!coords) return showStatus('❌ Endereço não localizado. Tente um CEP válido ou endereço mais completo.', 'warning');
 
-  // 2. Tenta Google (se chave estiver configurada)
-  coords = await geocodeWithGoogle(fullAddress);
-  if (coords) return coords;
-
-  // 3. Último fallback: só cidade/estado
-  if (userLocation) {
-    const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
-    coords = await geocodeBasic(fallback);
-    if (coords) {
-      showStatus('⚠️ Coordenadas aproximadas (cidade)', 'warning');
-      return coords;
+      addresses.push({ id: Date.now(), text: text, coords, completed: false });
+      input.value = '';
+      renderAddressList();
+      document.getElementById('optimize-btn').style.display = 'block';
+      showStatus('✅ Endereço adicionado!', 'success');
     }
-  }
 
-  return null;
-}
-        async function calculateRealDistance(from, to) {
-            const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
-            if (distanceCache.has(key))
-                return distanceCache.get(key);
-            try {
-                const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
-                const resp = await fetch(url);
-                const data = await resp.json();
-                if (data.code === 'Ok' && data.routes?.length > 0) {
-                    const distance = data.routes[0].distance;
-                    const duration = data.routes[0].duration;
-                    const result = { distance, duration };
-                    distanceCache.set(key, result);
-                    return result;
-                } else {
-                    throw new Error('OSRM não retornou uma rota válida.');
-                }
-            } catch (e) {
-                console.warn('OSRM falhou, usando Haversine:', e);
-                const R = 6371000;
-                const φ1 = from.lat * Math.PI / 180;
-                const φ2 = to.lat * Math.PI / 180;
-                const Δφ = (to.lat - from.lat) * Math.PI / 180;
-                const Δλ = (to.lon - from.lon) * Math.PI / 180;
-                const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                          Math.cos(φ1) * Math.cos(φ2) *
-                          Math.sin(Δλ/2) * Math.sin(Δλ/2);
-                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                const distance = R * c;
-                const duration = distance / 13.89;
-                const result = { distance, duration };
-                distanceCache.set(key, result);
-                return result;
-            }
-        }
-        async function optimizeRouteNearestNeighbor(start, destinations) {
-            const route = [];
-            const remaining = [...destinations];
-            let current = start;
-            while (remaining.length > 0) {
-                let nearest = null;
-                let minDist = Infinity;
-                let minIndex = -1;
-                for (let i = 0; i < remaining.length; i++) {
-                    const dest = remaining[i];
-                    const { distance } = await calculateRealDistance(current.coords, dest.coords);
-                    if (distance < minDist) {
-                        minDist = distance;
-                        nearest = dest;
-                        minIndex = i;
-                    }
-                }
-                if (nearest) {
-                    route.push(nearest);
-                    remaining.splice(minIndex, 1);
-                    current = nearest;
-                }
-            }
-            return route;
-        }
+    function deleteAddress(id) {
+      addresses = addresses.filter(a => a.id !== id);
+      renderAddressList();
+      if (addresses.length === 0) document.getElementById('optimize-btn').style.display = 'none';
+    }
 
-        async function twoOptImprovement(route, start) {
-            let improved = true;
-            let currentRoute = [...route];
-            while (improved) {
-                improved = false;
-                for (let i = 0; i < currentRoute.length - 2; i++) {
-                    for (let j = i + 2; j < currentRoute.length - 1; j++) {
-                        const prev_i = i === 0 ? start : currentRoute[i - 1];
-                        const dist1 = await calculateRealDistance(prev_i.coords, currentRoute[i].coords);
-                        const dist2 = await calculateRealDistance(currentRoute[j].coords, currentRoute[j + 1].coords);
-                        const currentDist = dist1.distance + dist2.distance;
-                        const dist3 = await calculateRealDistance(prev_i.coords, currentRoute[j].coords);
-                        const dist4 = await calculateRealDistance(currentRoute[i].coords, currentRoute[j + 1].coords);
-                        const newDist = dist3.distance + dist4.distance;
-                        if (newDist < currentDist) {
-                            const segment = currentRoute.slice(i, j + 1).reverse();
-                            currentRoute = [...currentRoute.slice(0, i), ...segment, ...currentRoute.slice(j + 1)];
-                            improved = true;
-                        }
-                    }
-                }
-            }
-            return currentRoute;
-        }
+    async function calculateRealDistance(from, to) {
+      const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
+      if (distanceCache.has(key)) return distanceCache.get(key);
 
-        async function optimizeRoute() {
-            if (!departure || addresses.length === 0) {
-                return showStatus('Defina partida e destinos.', 'warning');
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (data.code === 'Ok' && data.routes?.length > 0) {
+          const result = { distance: data.routes[0].distance, duration: data.routes[0].duration };
+          distanceCache.set(key, result);
+          return result;
+        }
+      } catch (e) {
+        console.warn('OSRM falhou, usando distância em linha reta:', e);
+      }
+
+      const R = 6371000;
+      const φ1 = from.lat * Math.PI / 180;
+      const φ2 = to.lat * Math.PI / 180;
+      const Δφ = (to.lat - from.lat) * Math.PI / 180;
+      const Δλ = (to.lon - from.lon) * Math.PI / 180;
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = R * c;
+      const duration = distance / 13.89; // ~50 km/h média
+      const result = { distance, duration };
+      distanceCache.set(key, result);
+      return result;
+    }
+
+    async function optimizeRouteNearestNeighbor(start, destinations) {
+      const route = [];
+      const remaining = [...destinations];
+      let current = start;
+      while (remaining.length > 0) {
+        let nearest = null;
+        let minDist = Infinity;
+        let minIndex = -1;
+        for (let i = 0; i < remaining.length; i++) {
+          const { distance } = await calculateRealDistance(current.coords, remaining[i].coords);
+          if (distance < minDist) {
+            minDist = distance;
+            nearest = remaining[i];
+            minIndex = i;
+          }
+        }
+        if (nearest) {
+          route.push(nearest);
+          remaining.splice(minIndex, 1);
+          current = nearest;
+        }
+      }
+      return route;
+    }
+
+    async function twoOptImprovement(route, start) {
+      let improved = true;
+      let currentRoute = [...route];
+      while (improved) {
+        improved = false;
+        for (let i = 0; i < currentRoute.length - 2; i++) {
+          for (let j = i + 2; j < currentRoute.length - 1; j++) {
+            const prev = i === 0 ? start : currentRoute[i - 1];
+            const [d1, d2, d3, d4] = await Promise.all([
+              calculateRealDistance(prev.coords, currentRoute[i].coords),
+              calculateRealDistance(currentRoute[j].coords, currentRoute[j + 1].coords),
+              calculateRealDistance(prev.coords, currentRoute[j].coords),
+              calculateRealDistance(currentRoute[i].coords, currentRoute[j + 1].coords)
+            ]);
+            if (d3.distance + d4.distance < d1.distance + d2.distance) {
+              const segment = currentRoute.slice(i, j + 1).reverse();
+              currentRoute = [...currentRoute.slice(0, i), ...segment, ...currentRoute.slice(j + 1)];
+              improved = true;
             }
-            const btn = document.getElementById('optimize-btn');
-            btn.disabled = true;
-            btn.textContent = '⏳ Otimizando...';
-            try {
-                const destinos = [];
-                for (let i = 0; i < addresses.length; i++) {
-                    showStatus(`Preparando ${i + 1}/${addresses.length}...`, 'info');
-                    const address = addresses[i];
-                    const coords = address.coords || await geocodeAddressFull(address.text);
-                    if (!coords) {
-                        showStatus(`⚠️ Endereço "${address.text}" não encontrado. Usando como texto somente.`, 'warning');
-                        destinos.push({ ...address, coords: null });
-                        continue;
-                    }
-                    destinos.push({ ...address, coords });
-                    await delay(1000);
-                }
-                if (destinos.length === 0) throw new Error('Nenhum destino válido');
-                showStatus('Calculando melhor rota...', 'info');
-                let optimized = await optimizeRouteNearestNeighbor(departure, destinos);
-                if (optimized.length > 3) {
-                    showStatus('Refinando rota...', 'info');
-                    optimized = await twoOptImprovement(optimized, departure);
-                }
-                let totalDistance = 0;
-                let totalDuration = 0;
-                let prev = departure;
-                for (const dest of optimized) {
-                    const { distance, duration } = await calculateRealDistance(prev.coords, dest.coords);
-                    totalDistance += distance;
-                    totalDuration += duration;
-                    prev = dest;
-                }
-                optimized.forEach(d => d.completed = false);
-                optimizedRoute = [{ ...departure, completed: true }, ...optimized];
-                activeIndex = 1;
-                document.getElementById('add-section').style.display = 'none';
-                document.getElementById('route-section').style.display = 'block';
-                await renderRoute();
-                const distKm = (totalDistance / 1000).toFixed(1);
-                const durMin = Math.round(totalDuration / 60);
-                showStatus(`✅ Rota otimizada! ${distKm}km · ~${durMin}min`, 'success');
-            } catch (e) {
-                console.error('Erro na otimização:', e);
-                showStatus('Erro: ' + e.message, 'warning');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '▶ Otimizar Rota';
-            }
+          }
+        }
+      }
+      return currentRoute;
+    }
+
+    async function optimizeRoute() {
+      if (!departure || addresses.length === 0) return showStatus('Defina partida e destinos.', 'warning');
+      const btn = document.getElementById('optimize-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Otimizando...';
+
+      try {
+        const destinos = addresses.map(a => ({ ...a }));
+        let optimized = await optimizeRouteNearestNeighbor(departure, destinos);
+        if (optimized.length > 3) {
+          showStatus('Refinando rota...', 'info');
+          optimized = await twoOptImprovement(optimized, departure);
         }
 
-        function delay(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
+        let totalDistance = 0, totalDuration = 0, prev = departure;
+        for (const dest of optimized) {
+          const { distance, duration } = await calculateRealDistance(prev.coords, dest.coords);
+          totalDistance += distance;
+          totalDuration += duration;
+          prev = dest;
         }
-function renderAddressList() {
-    const list = document.getElementById('address-list');
-    if (addresses.length === 0) {
+
+        optimized.forEach(d => d.completed = false);
+        optimizedRoute = [{ ...departure, completed: true }, ...optimized];
+        activeIndex = 1;
+        document.getElementById('add-section').style.display = 'none';
+        document.getElementById('route-section').style.display = 'block';
+        await renderRoute();
+
+        const distKm = (totalDistance / 1000).toFixed(1);
+        const durMin = Math.round(totalDuration / 60);
+        showStatus(`✅ Rota otimizada! ${distKm}km · ~${durMin}min`, 'success');
+      } catch (e) {
+        console.error('Erro na otimização:', e);
+        showStatus('Erro: ' + e.message, 'warning');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '▶ Otimizar Rota';
+      }
+    }
+
+    function renderAddressList() {
+      const list = document.getElementById('address-list');
+      if (addresses.length === 0) {
         list.innerHTML = '';
         return;
-    }
-    let html = '';
-    addresses.forEach((addr, index) => {
+      }
+      let html = '';
+      addresses.forEach((addr, i) => {
         html += `
-            <div class="address-item">
-                <div class="address-number">${index + 1}</div>
-                <div class="address-text">${addr.text}</div>
-                <button class="btn-delete" onclick="deleteAddress(${addr.id})">✕</button>
+          <div class="address-item">
+            <div class="address-number">${i + 1}</div>
+            <div class="address-text">${addr.text}</div>
+            <button class="btn-delete" onclick="deleteAddress(${addr.id})">×</button>
+          </div>`;
+      });
+      list.innerHTML = html;
+    }
+
+    async function renderRoute() {
+      const list = document.getElementById('route-list');
+      let html = '';
+      for (let i = 0; i < optimizedRoute.length; i++) {
+        const a = optimizedRoute[i];
+        const ativo = i === activeIndex && !a.completed;
+        const concluido = a.completed;
+        let distInfo = '';
+
+        if (i > 0) {
+          try {
+            const { distance, duration } = await calculateRealDistance(optimizedRoute[i - 1].coords, a.coords);
+            distInfo = `<small style="color:#667eea;">📍 ${(distance / 1000).toFixed(1)}km · ⏱️ ${Math.round(duration / 60)}min</small>`;
+          } catch (e) {
+            distInfo = `<small style="color:#ff5252;">⚠️ Distância não calculada</small>`;
+          }
+        }
+
+        html += `
+        <div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
+          <div class="route-header">
+            <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
+              ${concluido ? '✓' : i === 0 ? '📍' : i}
             </div>
-        `;
-    });
-    list.innerHTML = html;
-}
+            <div class="route-text">
+              <strong>${i === 0 ? 'Ponto de Partida' : a.text}</strong>
+              ${a.coords?.display_name ? `<small>${a.coords.display_name}</small>` : '<small style="color:#ff5252;">⚠️ Localização aproximada</small>'}
+              ${distInfo}
+            </div>
+          </div>
+          ${ativo && !concluido ? `
+            <div class="route-buttons">
+              <button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">🗺️ Maps</button>
+              <button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">🧭 Waze</button>
+              <button class="btn btn-complete btn-small" onclick="markCompleted(${i})">✓</button>
+            </div>` : ''}
+        </div>`;
+      }
+      list.innerHTML = html;
+      updateProgress();
+    }
 
-        async function renderRoute() {
-            const list = document.getElementById('route-list');
-            let html = '';
-            for (let i = 0; i < optimizedRoute.length; i++) {
-                const a = optimizedRoute[i];
-                const ativo = i === activeIndex && !a.completed;
-                const concluido = a.completed || false;
-                let distInfo = '';
-                if (i > 0) {
-                    const prev = optimizedRoute[i - 1];
-                    try {
-                        const { distance, duration } = await calculateRealDistance(prev.coords, a.coords);
-                        const km = (distance / 1000).toFixed(1);
-                        const min = Math.round(duration / 60);
-                        distInfo = `<small style="color: #667eea;">📍 ${km}km · ⏱️ ${min}min do anterior</small>`;
-                    } catch (e) {
-                        console.error('Erro ao calcular distância:', e);
-                        distInfo = `<small style="color: #ff5252;">⚠️ Distância não calculada</small>`;
-                    }
-                }
-                html += `
-                    <div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
-                        <div class="route-header">
-                            <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
-                                ${concluido ? '✓' : i}
-                            </div>
-                            <div class="route-text">
-                                <strong>${i === 0 ? 'Ponto de Partida' : a.text}</strong>
-                                ${a.coords ? `<small>${a.coords.display_name}</small>` : `<small style="color:#ff5252;">⚠️ Localização aproximada</small>`}
-                                ${distInfo}
-                            </div>
-                        </div>
-                        ${ativo && !concluido ? `
-                            <div class="route-buttons">
-                                <button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">Google Maps</button>
-                                <button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">Waze</button>
-                                <button class="btn btn-complete btn-small" onclick="markCompleted(${i})">✓</button>
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
+    function openMaps(i, app) {
+      const a = optimizedRoute[i];
+      const { lat, lon } = a.coords || {};
+      if (app === 'google') {
+        const url = lat && lon
+          ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`
+          : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.text)}`;
+        window.open(url, '_blank');
+      } else if (app === 'waze') {
+        if (lat && lon) {
+          const wazeUrl = `waze://?ll=${lat},${lon}&navigate=yes`;
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = wazeUrl;
+          document.body.appendChild(iframe);
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+            if (document.hasFocus()) {
+              window.open(`https://www.waze.com/ul?ll=${lat},${lon}&navigate=yes`, '_blank');
+              showStatus('Waze não encontrado. Abrindo no navegador...', 'info');
             }
-            list.innerHTML = html;
-            updateProgress();
+          }, 2000);
+        } else {
+          window.open(`https://www.waze.com/ul?q=${encodeURIComponent(a.text)}`, '_blank');
         }
+      }
+    }
 
-        function openMaps(i, app) {
-            const a = optimizedRoute[i];
-            const lat = a.coords?.lat;
-            const lon = a.coords?.lon;
-            if (app === 'google') {
-                const url = lat && lon
-                    ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`
-                    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.text)}`;
-                window.open(url, '_blank');
-            } else if (app === 'waze') {
-                if (lat && lon) {
-                    const wazeUrl = `waze://?ll=${lat},${lon}&navigate=yes`;
-                    const iframe = document.createElement('iframe');
-                    iframe.style.display = 'none';
-                    iframe.src = wazeUrl;
-                    document.body.appendChild(iframe);
-                    setTimeout(() => {
-                        document.body.removeChild(iframe);
-                        if (document.hasFocus()) {
-                            window.open(`https://www.waze.com/ul?ll=${lat},${lon}&navigate=yes`, '_blank');
-                            showStatus('Waze não encontrado. Abrindo no navegador...', 'info');
-                        }
-                    }, 2000);
-                } else {
-                    window.open(`https://www.waze.com/ul?q=${encodeURIComponent(a.text)}`, '_blank');
-                }
-            }
-        }
+    function markCompleted(i) {
+      optimizedRoute[i].completed = true;
+      if (i < optimizedRoute.length - 1) activeIndex = i + 1;
+      renderRoute();
+    }
 
-        function markCompleted(i) {
-            optimizedRoute[i].completed = true;
-            if (i < optimizedRoute.length - 1) activeIndex = i + 1;
-            renderRoute();
-        }
+    function updateProgress() {
+      const concluidos = optimizedRoute.slice(1).filter(a => a.completed).length;
+      const total = optimizedRoute.length - 1;
+      document.getElementById('progress-bar').innerHTML = `<strong>${concluidos} de ${total}</strong> paradas concluídas`;
+    }
 
-        function updateProgress() {
-            const concluidos = optimizedRoute.slice(1).filter(a => a.completed).length;
-            const total = optimizedRoute.length - 1;
-            document.getElementById('progress-bar').innerHTML = `<strong>${concluidos} de ${total}</strong> paradas concluídas`;
-        }
+    function resetRoute() {
+      optimizedRoute = [];
+      activeIndex = 0;
+      addresses = [];
+      departure = null;
+      userLocation = null;
+      distanceCache.clear();
+      document.getElementById('base-location-section').style.display = 'block';
+      document.getElementById('departure-section').style.display = 'none';
+      document.getElementById('add-section').style.display = 'block';
+      document.getElementById('route-section').style.display = 'none';
+      renderAddressList();
+      document.getElementById('optimize-btn').style.display = 'none';
+      document.getElementById('status-container').innerHTML = '';
+      document.getElementById('base-location-input').value = '';
+      document.getElementById('base-location-display').textContent = 'Nenhuma localização base definida. Por favor, defina para continuar.';
+      document.getElementById('departure-input').value = '';
+      document.getElementById('departure-display').textContent = 'Nenhum ponto de partida definido.';
+      document.getElementById('address-input').value = '';
+      stopCamera();
+    }
 
-        function resetRoute() {
-            optimizedRoute = [];
-            activeIndex = 0;
-            addresses = [];
-            departure = null;
-            userLocation = null;
-            distanceCache.clear();
-            document.getElementById('base-location-section').style.display = 'block';
-            document.getElementById('departure-section').style.display = 'none';
-            document.getElementById('add-section').style.display = 'block';
-            document.getElementById('route-section').style.display = 'none';
-            renderAddressList();
-            document.getElementById('optimize-btn').style.display = 'none';
-            document.getElementById('status-container').innerHTML = '';
-            document.getElementById('base-location-input').value = '';
-            document.getElementById('base-location-display').textContent = 'Nenhuma localização base definida. Por favor, defina para continuar.';
-            document.getElementById('departure-input').value = '';
-            document.getElementById('departure-display').textContent = 'Nenhum ponto de partida definido.';
-            document.getElementById('address-input').value = '';
-            stopCamera();
-        }
+    // === Voice, Camera, OCR ===
+    function requestVoicePermissionAndStart() {
+      if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+        return showStatus('Voz não suportada.', 'warning');
+      }
+      if (!userLocation) return showStatus('Defina localização base.', 'warning');
+      startVoice();
+    }
 
-        // === Voice, Camera, etc ===
-        function requestVoicePermissionAndStart() {
-            if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
-                return showStatus('Voz não suportada.', 'warning');
-            }
-            if (!userLocation) return showStatus('Defina localização base.', 'warning');
-            startVoice();
-        }
+    function startVoice() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'pt-BR';
+      recognition.interimResults = false;
+      const btn = document.getElementById('voice-btn');
+      btn.disabled = true;
+      recognition.onstart = () => {
+        isListening = true;
+        btn.classList.add('listening');
+        btn.textContent = '🎤 Ouvindo...';
+        showStatus('Fale o endereço...', 'info');
+      };
+      recognition.onend = () => {
+        isListening = false;
+        btn.classList.remove('listening');
+        btn.textContent = '🎤 Voz';
+        btn.disabled = false;
+      };
+      recognition.onresult = (e) => {
+        const t = e.results[0][0].transcript.trim();
+        document.getElementById('address-input').value = t;
+        addAddress();
+      };
+      recognition.onerror = (e) => {
+        const msg = e.error === 'not-allowed' ? 'Permissão de microfone negada.' : e.error;
+        showStatus('Erro: ' + msg, 'warning');
+        recognition.onend();
+      };
+      recognition.start();
+    }
 
-        function startVoice() {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'pt-BR';
-            recognition.interimResults = false;
-            const btn = document.getElementById('voice-btn');
-            btn.disabled = true;
-            recognition.onstart = () => {
-                isListening = true;
-                btn.classList.add('listening');
-                btn.textContent = '🎤 Ouvindo...';
-                showStatus('Fale o endereço...', 'info');
-            };
-            recognition.onend = () => {
-                isListening = false;
-                btn.classList.remove('listening');
-                btn.textContent = '🎤 Voz';
-                btn.disabled = false;
-            };
-            recognition.onresult = (e) => {
-                const t = e.results[0][0].transcript.trim();
-                document.getElementById('address-input').value = t;
-                addAddress();
-            };
-            recognition.onerror = (e) => {
-                let msg = e.error;
-                if (e.error === 'not-allowed') msg = 'Permissão de microfone negada.';
-                showStatus('Erro: ' + msg, 'warning');
-                recognition.onend();
-            };
-            recognition.start();
-        }
+    async function requestCameraPermissionAndStart(mode) {
+      if (!userLocation) return showStatus('Defina localização base.', 'warning');
+      isPhotoMode = mode === 'photo';
+      scannerType = isPhotoMode ? null : mode;
+      document.getElementById('camera-buttons').innerHTML = isPhotoMode
+        ? `<button class="btn btn-capture" onclick="captureImage()">Capturar</button><button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`
+        : `<button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`;
+      await startCamera();
+    }
 
-        async function requestCameraPermissionAndStart(mode) {
-            if (!userLocation) return showStatus('Defina localização base.', 'warning');
-            isPhotoMode = mode === 'photo';
-            scannerType = isPhotoMode ? null : mode;
-            document.getElementById('camera-buttons').innerHTML = isPhotoMode
-                ? `<button class="btn btn-capture" onclick="captureImage()">Capturar</button><button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`
-                : `<button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`;
-            await startCamera();
-        }
-
-async function startCamera() {
-    try {
+    async function startCamera() {
+      try {
         cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         document.getElementById('camera-video').srcObject = cameraStream;
         document.getElementById('camera-container').style.display = 'block';
 
         if (!isPhotoMode && scannerType) {
-            const video = document.getElementById('camera-video');
-            const canvas = document.createElement('canvas');
-            const interval = setInterval(async () => {
-                if (video.videoWidth > 0 && video.videoHeight > 0) {
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(video, 0, 0);
-                    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    if (scannerType === 'qr') {
-                        const code = jsQR(img.data, canvas.width, canvas.height);
-                        if (code) {
-                            handleScannedCode(code.data);
-                            clearInterval(interval);
-                            stopCamera();
-                        }
-                    } else if (scannerType === 'barcode') {
-                        Quagga.decodeSingle({
-                            decoder: { readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'code_39_vin_reader', 'codabar_reader', 'upc_reader', 'upc_e_reader', 'i2of5_reader'] },
-                            locate: true,
-                            src: canvas.toDataURL('image/png')
-                        }, (result) => {
-                            if (result?.codeResult) {
-                                handleScannedCode(result.codeResult.code);
-                                clearInterval(interval);
-                                stopCamera();
-                            }
-                        });
-                    }
+          const video = document.getElementById('camera-video');
+          const canvas = document.createElement('canvas');
+          const interval = setInterval(() => {
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+              canvas.width = video.videoWidth;
+              canvas.height = video.videoHeight;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(video, 0, 0);
+              const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+              if (scannerType === 'qr') {
+                const code = jsQR(img.data, canvas.width, canvas.height);
+                if (code) {
+                  handleScannedCode(code.data);
+                  clearInterval(interval);
+                  stopCamera();
                 }
-            }, 300);
+              } else if (scannerType === 'barcode') {
+                Quagga.decodeSingle({
+                  decoder: { readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'codabar_reader'] },
+                  locate: true,
+                  src: canvas.toDataURL('image/png')
+                }, (result) => {
+                  if (result?.codeResult) {
+                    handleScannedCode(result.codeResult.code);
+                    clearInterval(interval);
+                    stopCamera();
+                  }
+                });
+              }
+            }
+          }, 300);
         }
-    } catch (e) {
-        let msg = 'Erro desconhecido.';
-        if (e.name === 'NotAllowedError') msg = 'Permissão de câmera negada.';
+      } catch (e) {
+        const msg = e.name === 'NotAllowedError' ? 'Permissão de câmera negada.' : 'Erro desconhecido.';
         showStatus('Erro na câmera: ' + msg, 'warning');
         document.getElementById('camera-container').style.display = 'none';
+      }
     }
-}
 
-async function captureImage() {
-    const video = document.getElementById('camera-video');
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    showStatus('Extraindo texto...', 'info');
-    try {
+    async function captureImage() {
+      const video = document.getElementById('camera-video');
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      showStatus('Extraindo texto...', 'info');
+      try {
         const result = await Tesseract.recognize(canvas.toDataURL('image/png'), 'por');
-        const text = result.data.text;
-        const clean = text.trim().replace(/\n/g, ' ');
+        const clean = result.data.text.trim().replace(/\n/g, ' ');
         document.getElementById('address-input').value = clean;
         addAddress();
-        showStatus('Texto extraído: ' + clean, 'success');
-    } catch (err) {
+        showStatus('Texto extraído com sucesso!', 'success');
+      } catch (err) {
         console.error('OCR error:', err);
-        showStatus('Erro no OCR: ' + err.message, 'warning');
+        showStatus('Erro no OCR: tente outra foto.', 'warning');
+      }
+      stopCamera();
     }
-    stopCamera();
-}
 
-        function stopCamera() {
-            if (cameraStream) {
-                cameraStream.getTracks().forEach(t => t.stop());
-                cameraStream = null;
-            }
-            document.getElementById('camera-container').style.display = 'none';
-        }
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream = null;
+      }
+      document.getElementById('camera-container').style.display = 'none';
+    }
 
-        function handleScannedCode(code) {
-            document.getElementById('address-input').value = code;
-            addAddress();
-            showStatus('Código escaneado: ' + code, 'success');
-        }
+    function handleScannedCode(code) {
+      document.getElementById('address-input').value = code;
+      addAddress();
+      showStatus('Código escaneado com sucesso!', 'success');
+    }
 
-        function addUserLocationManually() {
-            showStatus('Função não implementada.', 'warning');
-        }
+    function addUserLocationManually() {
+      showStatus('📍 Minha Posição: use o botão em “Ponto de Partida”.', 'info');
+    }
 
-        function showStatus(message, type = 'info') {
-            const c = document.getElementById('status-container');
-            const cls = type === 'success' ? 'status-success' : type === 'warning' ? 'status-warning' : 'status-info';
-            c.innerHTML = `<div class="status-bar ${cls}">${message}</div>`;
-            if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
-        }
-    </script>
+    function showStatus(message, type = 'info') {
+      const c = document.getElementById('status-container');
+      const cls = type === 'success' ? 'status-success' : type === 'warning' ? 'status-warning' : 'status-info';
+      c.innerHTML = `<div class="status-bar ${cls}">${message}</div>`;
+      if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
+    }
+  </script>
 </body>
 </html>
