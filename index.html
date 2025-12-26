@@ -1261,39 +1261,28 @@ function extractAddressesFromText(text) {
     }
     return foundCEPs;
 }
-
 async function processPdf(e) {
     const file = e.target.files[0];
     if (!file) return;
 
     showStatus('Carregando e analisando PDF...', 'info');
 
-    // 1. Definir o worker ANTES de tentar carregar o PDF
+    // --- VERIFICAÇÃO ADICIONADA ---
+    if (typeof pdfjsLib === 'undefined') {
+        showStatus('Erro interno: Biblioteca PDF não carregada. Recarregue a página.', 'warning');
+        console.error('pdfjsLib não está definido globalmente. O script pdf.min.js pode não ter carregado corretamente.');
+        e.target.value = ''; // Limpa o input
+        return;
+    }
+    // --- FIM DA VERIFICAÇÃO ---
+
     try {
-        // Certifique-se de que o caminho do worker esteja correto
+        // Configura o worker (obrigatório)
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/legacy/build/pdf.worker.min.js';
-    } catch (err) {
-        console.error('Erro ao configurar o worker do PDF.js:', err);
-        showStatus('Erro interno: Worker do PDF não configurado.', 'warning');
-        e.target.value = ''; // Limpa o input
-        return;
-    }
-
-    let pdf;
-    try {
-        // 2. Carregar o PDF
         const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
-        pdf = await loadingTask.promise;
-    } catch (err) {
-        console.error('Erro ao carregar o PDF:', err);
-        showStatus('Erro ao carregar o PDF. Verifique o arquivo.', 'warning');
-        e.target.value = ''; // Limpa o input
-        return;
-    }
+        const pdf = await loadingTask.promise;
 
-    let fullText = '';
-    try {
-        // 3. Extrair texto de todas as páginas
+        let fullText = '';
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
             const page = await pdf.getPage(pageNum);
             const textContent = await page.getTextContent();
@@ -1302,18 +1291,69 @@ async function processPdf(e) {
                 .join(' ');
             fullText += pageText + ' ';
         }
-    } catch (err) {
-        console.error('Erro ao extrair texto do PDF:', err);
-        showStatus('Erro ao extrair texto do PDF. Pode ser uma imagem.', 'warning');
-        e.target.value = ''; // Limpa o input
-        return;
-    }
 
-    // 4. Processar o texto extraído
-    if (!fullText.trim()) {
-        showStatus('Nenhum texto selecionável encontrado no PDF. Pode ser uma imagem.', 'warning');
-        e.target.value = ''; // Limpa o input
-        return;
+        // Regex robusta para o formato dos Correios (testada com seus prints)
+        const regex = /Endereço:\s*([^,]+?)\s*,\s*(\d+)\s*CEP:\s*(\d{8})/gi;
+        const matches = [...fullText.matchAll(regex)];
+
+        if (matches.length === 0) {
+            // Tenta uma regex mais genérica para CEPs se a específica falhar
+            const cepRegex = /(\d{5})-?(\d{3})/g;
+            const cepMatches = [...fullText.matchAll(cepRegex)];
+            if (cepMatches.length > 0) {
+                 showStatus(`Nenhum endereço no formato esperado, mas ${cepMatches.length} CEPs encontrados. Adicionando...`, 'info');
+                 // Extrai pedaços de texto próximos aos CEPs como endereços
+                 let addedCount = 0;
+                 for (const cepMatch of cepMatches) {
+                     const cep = cepMatch[1] + cepMatch[2]; // Junta 5 e 3 dígitos
+                     const cepIndex = cepMatch.index;
+                     // Tenta encontrar um pedaço de texto razoável antes do CEP
+                     const contextStart = Math.max(0, fullText.lastIndexOf('\n', cepIndex)); // Linha anterior
+                     const contextEnd = fullText.indexOf('\n', cepIndex); // Próxima linha
+                     const line = fullText.substring(contextStart, contextEnd !== -1 ? contextEnd : fullText.length).trim();
+                     // Remove o CEP da linha para formar o endereço
+                     const enderecoSemCep = line.replace(new RegExp(cep, 'g'), '').trim();
+                     const enderecoCompleto = `${enderecoSemCep} CEP: ${cep}`.trim();
+                     if (enderecoCompleto && enderecoCompleto !== `CEP: ${cep}`) { // Verifica se algo além do CEP foi encontrado
+                         document.getElementById('address-input').value = enderecoCompleto;
+                         await addAddress(); // aguarda geocodificação completa
+                         addedCount++;
+                     }
+                 }
+                 if (addedCount > 0) {
+                     showStatus(`✅ ${addedCount} endereço(s) adicionado(s) com sucesso do PDF!`, 'success');
+                     document.getElementById('optimize-btn').style.display = 'block';
+                     renderAddressList();
+                 } else {
+                     showStatus('Nenhum endereço ou CEP útil encontrado no texto do PDF.', 'warning');
+                 }
+                 e.target.value = '';
+                 return;
+            } else {
+                showStatus('Nenhum endereço encontrado. Verifique se o PDF contém texto selecionável (não imagem escaneada).', 'warning');
+                e.target.value = '';
+                return;
+            }
+        }
+
+        showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 'info');
+        for (const match of matches) {
+            const logradouro = match[1].trim(); // inclui bairro entre parênteses
+            const numero = match[2].trim();
+            const cep = match[3];
+            const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
+            document.getElementById('address-input').value = enderecoCompleto;
+            await addAddress(); // aguarda geocodificação completa
+        }
+
+        showStatus(`✅ ${matches.length} endereços adicionados com sucesso do PDF!`, 'success');
+        document.getElementById('optimize-btn').style.display = 'block';
+        renderAddressList();
+    } catch (err) {
+        console.error('Erro ao processar PDF:', err);
+        showStatus('Erro ao ler o PDF. Certifique-se de que é um PDF com texto selecionável.', 'warning');
+    } finally {
+        e.target.value = '';
     }
 
     // 5. Usar a função auxiliar para encontrar endereços
