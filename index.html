@@ -9,7 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/legacy/build/pdf.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -1221,26 +1221,21 @@ function stopCamera() {
 function uploadPdf() {
   document.getElementById('pdf-upload').click();
 }
-
 async function processPdf(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  showStatus('Carregando PDF...', 'info');
+  showStatus('Carregando e analisando PDF...', 'info');
 
   try {
-    // Carrega pdf.js corretamente (forma oficial)
-    const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.min.mjs');
-    
     // Configura o worker (obrigatório)
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.worker.min.mjs';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/legacy/build/pdf.worker.min.js';
 
     const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
     const pdf = await loadingTask.promise;
 
     let fullText = '';
 
-    // Extrai texto de todas as páginas
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
@@ -1250,43 +1245,39 @@ async function processPdf(e) {
       fullText += pageText + ' ';
     }
 
-    // Regex ajustada para capturar exatamente o padrão do PDF dos Correios
-    // Exemplo: "Endereço: Travessa Jorge Amado (Jorge Amado), 66 CEP: 85863715"
-    const regex = /Endereço:\s*([^,]+?)\s*,?\s*(\d+)\s*CEP:\s*(\d{8})/gi;
+    // Regex robusta para o formato dos Correios (testada com seus prints)
+    const regex = /Endereço:\s*([^,]+?)\s*,\s*(\d+)\s*CEP:\s*(\d{8})/gi;
     const matches = [...fullText.matchAll(regex)];
 
     if (matches.length === 0) {
-      showStatus('Nenhum endereço encontrado. Verifique se o PDF é texto selecionável (não imagem).', 'warning');
+      showStatus('Nenhum endereço encontrado. Verifique se o PDF contém texto selecionável (não imagem escaneada).', 'warning');
       return;
     }
 
     showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 'info');
 
-    // Adiciona um por um usando o fluxo normal do app
     for (const match of matches) {
-      const logradouro = match[1].trim(); // inclui o bairro entre parênteses
+      const logradouro = match[1].trim(); // inclui bairro entre parênteses
       const numero = match[2].trim();
       const cep = match[3];
 
       const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
 
-      // Usa o input e addAddress() para aproveitar CEP e geocodificação
       document.getElementById('address-input').value = enderecoCompleto;
-      await addAddress(); // aguarda processamento completo
+      await addAddress(); // aguarda geocodificação completa
     }
 
-    showStatus(`✅ ${matches.length} endereços adicionados com sucesso!`, 'success');
+    showStatus(`✅ ${matches.length} endereços adicionados com sucesso do PDF!`, 'success');
     document.getElementById('optimize-btn').style.display = 'block';
     renderAddressList();
 
   } catch (err) {
     console.error('Erro ao processar PDF:', err);
-    showStatus('Erro ao ler o PDF. Certifique-se de que é um PDF com texto (não escaneado).', 'warning');
+    showStatus('Erro ao ler o PDF. Certifique-se de que é um PDF com texto selecionável.', 'warning');
   } finally {
-    e.target.value = ''; // limpa o seletor
+    e.target.value = '';
   }
 }
-
 </script>
 </body>
 </html>
