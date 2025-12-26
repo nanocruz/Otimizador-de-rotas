@@ -9,6 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -419,6 +420,7 @@
         <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('barcode')">Código</button>
         <button class="btn btn-voice" onclick="requestCameraPermissionAndStart('qr')">QR</button>
         <button class="btn btn-voice" onclick="addUserLocationManually()">Minha Posição</button>
+        <button class="btn btn-voice" onclick="uploadPdf()">PDF</button>
       </div>
 
       <div id="camera-container" style="display: none;">
@@ -443,7 +445,8 @@
     <button id="optimize-btn" class="btn btn-optimize" onclick="optimizeRoute()" style="display: none;">
       Otimizar Rota
     </button>
-  </div>
+    <input type="file" id="pdf-upload" accept=".pdf" style="display:none;" onchange="processPdf(event)">
+</div>
 
   <script>
     let addresses = [];
@@ -1051,62 +1054,126 @@
       recognition.start();
     }
 
-    async function requestCameraPermissionAndStart(mode) {
-      if (!userLocation) return showStatus('Defina localização base.', 'warning');
-      isPhotoMode = mode === 'photo';
-      scannerType = isPhotoMode ? null : mode;
-      document.getElementById('camera-buttons').innerHTML = isPhotoMode
-        ? `<button class="btn btn-capture" onclick="captureImage()">Capturar</button><button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`
-        : `<button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`;
-      await startCamera();
-    }
+async function requestCameraPermissionAndStart(mode) {
+  if (!userLocation) return showStatus('Defina localização base.', 'warning');
+  isPhotoMode = mode === 'photo';
+  scannerType = isPhotoMode ? null : mode;
 
-    async function startCamera() {
-      try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        document.getElementById('camera-video').srcObject = cameraStream;
-        document.getElementById('camera-container').style.display = 'block';
+  // Sempre mostra os dois botões para barcode/QR (Capturar + Cancelar)
+  // Para foto mantém como antes
+  let buttonsHTML = '';
+  if (isPhotoMode) {
+    buttonsHTML = `<button class="btn btn-capture" onclick="captureImage()">Capturar Foto</button>`;
+  } else {
+    buttonsHTML = `<button class="btn btn-capture" onclick="captureForScan()">Capturar Frame</button>`;
+  }
+  buttonsHTML += `<button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`;
+  document.getElementById('camera-buttons').innerHTML = buttonsHTML;
 
-        if (!isPhotoMode && scannerType) {
-          const video = document.getElementById('camera-video');
-          const canvas = document.createElement('canvas');
-          const interval = setInterval(() => {
-            if (video.videoWidth > 0 && video.videoHeight > 0) {
-              canvas.width = video.videoWidth;
-              canvas.height = video.videoHeight;
-              const ctx = canvas.getContext('2d');
-              ctx.drawImage(video, 0, 0);
-              const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              if (scannerType === 'qr') {
-                const code = jsQR(img.data, canvas.width, canvas.height);
-                if (code) {
-                  handleScannedCode(code.data);
-                  clearInterval(interval);
-                  stopCamera();
-                }
-              } else if (scannerType === 'barcode') {
-                Quagga.decodeSingle({
-                  decoder: { readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'codabar_reader'] },
-                  locate: true,
-                  src: canvas.toDataURL('image/png')
-                }, (result) => {
-                  if (result?.codeResult) {
-                    handleScannedCode(result.codeResult.code);
-                    clearInterval(interval);
-                    stopCamera();
-                  }
-                });
-              }
+  await startCamera();
+}
+
+let scanInterval = null; // para limpar o interval
+
+async function startCamera() {
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
+    });
+    const video = document.getElementById('camera-video');
+    video.srcObject = cameraStream;
+    document.getElementById('camera-container').style.display = 'block';
+
+    // Limpa interval anterior se existir
+    if (scanInterval) clearInterval(scanInterval);
+
+    if (!isPhotoMode && scannerType) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      scanInterval = setInterval(() => {
+        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+          if (scannerType === 'qr') {
+            const code = jsQR(imageData.data, canvas.width, canvas.height);
+            if (code) {
+              handleScannedCode(code.data);
+              clearInterval(scanInterval);
+              stopCamera();
             }
-          }, 300);
+          } else if (scannerType === 'barcode') {
+            // Para barcode, NÃO usamos decodeSingle em loop (problemático)
+            // Deixamos só detecção manual via botão
+            // (opcional: você pode tentar jsQR para 1D também, mas Quagga é melhor para 1D)
+          }
         }
-      } catch (e) {
-        const msg = e.name === 'NotAllowedError' ? 'Permissão de câmera negada.' : 'Erro desconhecido.';
-        showStatus('Erro na câmera: ' + msg, 'warning');
-        document.getElementById('camera-container').style.display = 'none';
-      }
+      }, 500); // Aumentei para 500ms → menos carga na bateria/CPU
     }
+  } catch (e) {
+    showStatus('Erro na câmera: ' + (e.name === 'NotAllowedError' ? 'Permissão negada' : 'Erro desconhecido'), 'warning');
+    document.getElementById('camera-container').style.display = 'none';
+  }
+}
 
+// Nova função: captura frame atual e tenta detectar (manual)
+async function captureForScan() {
+  const video = document.getElementById('camera-video');
+  if (video.videoWidth === 0 || video.videoHeight === 0) {
+    showStatus('Frame não pronto ainda. Tente novamente.', 'warning');
+    return;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  showStatus('Processando frame capturado...', 'info');
+
+  if (scannerType === 'qr') {
+    const code = jsQR(imageData.data, canvas.width, canvas.height);
+    if (code) {
+      handleScannedCode(code.data);
+      stopCamera();
+      return;
+    }
+  } else if (scannerType === 'barcode') {
+    // Usa Quagga.decodeSingle apenas uma vez (no frame capturado) → mais confiável
+    Quagga.decodeSingle({
+      decoder: { readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'codabar_reader', 'upc_reader', 'i2of5_reader'] },
+      locate: true,
+      src: canvas.toDataURL('image/png')
+    }, (result) => {
+      if (result && result.codeResult) {
+        handleScannedCode(result.codeResult.code);
+        stopCamera();
+      } else {
+        showStatus('Código não detectado neste frame. Tente reposicionar.', 'warning');
+      }
+    });
+    return;
+  }
+
+  showStatus('Código não detectado. Tente novamente.', 'warning');
+}
+
+function stopCamera() {
+  if (scanInterval) {
+    clearInterval(scanInterval);
+    scanInterval = null;
+  }
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+  }
+  document.getElementById('camera-container').style.display = 'none';
+}
     async function captureImage() {
       const video = document.getElementById('camera-video');
       const canvas = document.createElement('canvas');
@@ -1150,6 +1217,65 @@
       const cls = type === 'success' ? 'status-success' : type === 'warning' ? 'status-warning' : 'status-info';
       c.innerHTML = `<div class="status-bar ${cls}">${message}</div>`;
       if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
+    }
+
+    function uploadPdf() {
+      document.getElementById('pdf-upload').click();
+    }
+
+async function processPdf(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      showStatus('Carregando e analisando PDF...', 'info');
+
+      try {
+        // Configura o worker do pdf.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.worker.min.js';
+
+        const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
+        const pdf = await loadingTask.promise;
+
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          const pageText = content.items.map(item => item.str).join(' ');
+          fullText += pageText + '\n';
+        }
+
+        // Regex otimizada para o formato dos Correios
+        const regex = /Endereço:\s*([^,]+?)\s*,\s*(\d+)\s*CEP:\s*(\d{8})/g;
+        const matches = [...fullText.matchAll(regex)];
+
+        if (matches.length === 0) {
+          showStatus('Nenhum endereço encontrado no PDF. Verifique o formato.', 'warning');
+          return;
+        }
+
+        showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 'info');
+
+        for (const match of matches) {
+          const logradouro = match[1].trim();
+          const numero = match[2].trim();
+          const cep = match[3];
+          const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
+
+          // Usa o fluxo normal do app
+          document.getElementById('address-input').value = enderecoCompleto;
+          await addAddress(); // aguarda geocodificação
+        }
+
+        showStatus(`✅ ${matches.length} endereços adicionados com sucesso do PDF!`, 'success');
+        document.getElementById('optimize-btn').style.display = 'block';
+        renderAddressList();
+
+      } catch (err) {
+        console.error('Erro ao processar PDF:', err);
+        showStatus('Erro ao ler o PDF. Tente outro arquivo ou verifique se é texto selecionável.', 'warning');
+      } finally {
+        e.target.value = ''; // limpa o input
+      }
     }
   </script>
 </body>
