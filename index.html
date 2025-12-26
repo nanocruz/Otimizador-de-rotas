@@ -9,14 +9,16 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/legacy/build/pdf.min.js"></script>
-<!-- Adicione esta linha logo após pdf.min.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/legacy/build/pdf.min.js" onload="configurePdfWorker()"></script>
 <script>
-    // Configura o worker assim que a biblioteca principal carrega
-    if (typeof pdfjsLib !== 'undefined') {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/legacy/build/pdf.worker.min.js';
-    } else {
-        console.error('Biblioteca pdf.min.js não carregada antes da configuração do worker.');
+    // Função que configura o worker somente após o carregamento da biblioteca
+    function configurePdfWorker() {
+        if (typeof pdfjsLib !== 'undefined') {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/legacy/build/pdf.worker.min.js';
+            console.log('PDF.js configurado com sucesso!');
+        } else {
+            console.error('Erro ao configurar PDF.js: biblioteca não disponível.');
+        }
     }
 </script>
 <style>
