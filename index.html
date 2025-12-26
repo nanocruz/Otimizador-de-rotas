@@ -1211,72 +1211,152 @@ function stopCamera() {
     function addUserLocationManually() {
       showStatus('Minha Posição: use o botão em “Ponto de Partida”.', 'info');
     }
-
-    function showStatus(message, type = 'info') {
-      const c = document.getElementById('status-container');
-      const cls = type === 'success' ? 'status-success' : type === 'warning' ? 'status-warning' : 'status-info';
-      c.innerHTML = `<div class="status-bar ${cls}">${message}</div>`;
-      if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
-    }
-function uploadPdf() {
-  document.getElementById('pdf-upload').click();
+function showStatus(message, type = 'info') {
+    const c = document.getElementById('status-container');
+    const cls = type === 'success' ? 'status-success' : type === 'warning' ? 'status-warning' : 'status-info';
+    c.innerHTML = `<div class="status-bar ${cls}">${message}</div>`;
+    if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
 }
+
+function uploadPdf() {
+    document.getElementById('pdf-upload').click();
+}
+
+// Função auxiliar para extrair CEPs de um bloco de texto
+function extractAddressesFromText(text) {
+    // Encontra sequências de 8 dígitos (CEPs)
+    const cepRegex = /(\d{5})-?(\d{3})/g;
+    const foundCEPs = [];
+    let match;
+
+    while ((match = cepRegex.exec(text)) !== null) {
+        const cep = match[1] + match[2]; // Junta os grupos para formar o CEP de 8 dígitos
+        const cepIndex = match.index;
+        // Tenta encontrar um pedaço de texto razoável antes do CEP
+        // Procura o final da linha anterior ou um ponto
+        const contextStart = text.lastIndexOf('\n', cepIndex); // Tenta encontrar a quebra de linha antes
+        if (contextStart === -1) continue; // Ignora se não encontrar quebra de linha
+
+        const contextEnd = text.indexOf('\n', cepIndex); // Tenta encontrar a quebra de linha depois
+        const line = text.substring(contextStart + 1, contextEnd !== -1 ? contextEnd : cepIndex).trim();
+
+        // Tenta isolar uma parte que pareça um endereço (rua, número) antes do CEP
+        // Esta é uma tentativa simplificada, pode precisar de ajustes
+        // Exemplo: "Rua Exemplo, 123 - 01234567"
+        const addressMatch = line.match(/^(.*?)(?:\s*-\s*|\s+)(\d{5}-?\d{3})$/); // Tenta capturar antes do CEP na mesma linha
+        if (addressMatch) {
+            foundCEPs.push({
+                fullText: addressMatch[0],
+                addressPart: addressMatch[1].trim(),
+                cep: addressMatch[2].replace('-', '')
+            });
+        } else {
+             // Se não encontrar um padrão exato, usa a linha inteira como parte do endereço
+             foundCEPs.push({
+                 fullText: line,
+                 addressPart: line.replace(new RegExp(cep, 'g'), '').trim(), // Remove o CEP da linha
+                 cep: cep
+             });
+        }
+    }
+    return foundCEPs;
+}
+
 async function processPdf(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
 
-  showStatus('Carregando e analisando PDF...', 'info');
+    showStatus('Carregando e analisando PDF...', 'info');
 
-  try {
-    // Configura o worker (obrigatório)
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/legacy/build/pdf.worker.min.js';
+    // 1. Definir o worker ANTES de tentar carregar o PDF
+    try {
+        // Certifique-se de que o caminho do worker esteja correto
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/legacy/build/pdf.worker.min.js';
+    } catch (err) {
+        console.error('Erro ao configurar o worker do PDF.js:', err);
+        showStatus('Erro interno: Worker do PDF não configurado.', 'warning');
+        e.target.value = ''; // Limpa o input
+        return;
+    }
 
-    const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
-    const pdf = await loadingTask.promise;
+    let pdf;
+    try {
+        // 2. Carregar o PDF
+        const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
+        pdf = await loadingTask.promise;
+    } catch (err) {
+        console.error('Erro ao carregar o PDF:', err);
+        showStatus('Erro ao carregar o PDF. Verifique o arquivo.', 'warning');
+        e.target.value = ''; // Limpa o input
+        return;
+    }
 
     let fullText = '';
-
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map(item => item.str)
-        .join(' ');
-      fullText += pageText + ' ';
+    try {
+        // 3. Extrair texto de todas as páginas
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items
+                .map(item => item.str)
+                .join(' ');
+            fullText += pageText + ' ';
+        }
+    } catch (err) {
+        console.error('Erro ao extrair texto do PDF:', err);
+        showStatus('Erro ao extrair texto do PDF. Pode ser uma imagem.', 'warning');
+        e.target.value = ''; // Limpa o input
+        return;
     }
 
-    // Regex robusta para o formato dos Correios (testada com seus prints)
-    const regex = /Endereço:\s*([^,]+?)\s*,\s*(\d+)\s*CEP:\s*(\d{8})/gi;
-    const matches = [...fullText.matchAll(regex)];
-
-    if (matches.length === 0) {
-      showStatus('Nenhum endereço encontrado. Verifique se o PDF contém texto selecionável (não imagem escaneada).', 'warning');
-      return;
+    // 4. Processar o texto extraído
+    if (!fullText.trim()) {
+        showStatus('Nenhum texto selecionável encontrado no PDF. Pode ser uma imagem.', 'warning');
+        e.target.value = ''; // Limpa o input
+        return;
     }
 
-    showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 'info');
+    // 5. Usar a função auxiliar para encontrar endereços
+    const foundAddresses = extractAddressesFromText(fullText);
 
-    for (const match of matches) {
-      const logradouro = match[1].trim(); // inclui bairro entre parênteses
-      const numero = match[2].trim();
-      const cep = match[3];
-
-      const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
-
-      document.getElementById('address-input').value = enderecoCompleto;
-      await addAddress(); // aguarda geocodificação completa
+    if (foundAddresses.length === 0) {
+        showStatus('Nenhum endereço com CEP encontrado no texto do PDF.', 'warning');
+        e.target.value = ''; // Limpa o input
+        return;
     }
 
-    showStatus(`✅ ${matches.length} endereços adicionados com sucesso do PDF!`, 'success');
-    document.getElementById('optimize-btn').style.display = 'block';
-    renderAddressList();
+    // 6. Adicionar endereços encontrados
+    showStatus(`Encontrados ${foundAddresses.length} possíveis endereços. Adicionando...`, 'info');
+    let addedCount = 0;
+    for (const addr of foundAddresses) {
+        // Monta o endereço a ser adicionado, tentando ser o mais completo possível
+        let enderecoCompleto = addr.addressPart;
+        if (addr.cep) {
+            // Formata o CEP como 00000-000
+            const formattedCep = addr.cep.substring(0, 5) + '-' + addr.cep.substring(5);
+            enderecoCompleto += ` CEP: ${formattedCep}`;
+        }
 
-  } catch (err) {
-    console.error('Erro ao processar PDF:', err);
-    showStatus('Erro ao ler o PDF. Certifique-se de que é um PDF com texto selecionável.', 'warning');
-  } finally {
+        document.getElementById('address-input').value = enderecoCompleto.trim();
+        try {
+            // Chama addAddress e aguarda sua conclusão para garantir ordem
+            await addAddress();
+            addedCount++;
+        } catch (err) {
+            console.error('Erro ao adicionar endereço do PDF:', enderecoCompleto, err);
+            // Opcional: mostrar um status intermediário se muitos falharem
+        }
+    }
+
+    if (addedCount > 0) {
+        showStatus(`✅ ${addedCount} endereço(s) adicionado(s) com sucesso do PDF!`, 'success');
+        document.getElementById('optimize-btn').style.display = 'block';
+        renderAddressList(); // Atualiza a lista visualmente
+    } else {
+        showStatus('Nenhum endereço pôde ser adicionado.', 'warning');
+    }
+
     e.target.value = '';
-  }
 }
 </script>
 </body>
