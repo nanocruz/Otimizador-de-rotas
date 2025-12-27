@@ -7,21 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Otimizador de Rotas</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.js"></script>
-<script>
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js';
-</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>
-  // 🔥 FIX DEFINITIVO: garante pdfjsLib no escopo global
-  if (typeof window.pdfjsLib === 'undefined' && typeof window.pdfjsDistBuildPdf !== 'undefined') {
-    window.pdfjsLib = window.pdfjsDistBuildPdf;
-  }
-
-  if (typeof window.pdfjsLib !== 'undefined') {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  }
 </script>
 <script>
   console.log('PDFJS carregado:', window.pdfjsLib);
@@ -1160,8 +1146,10 @@ const textContent = await page.getTextContent();
 const pageText = textContent.items.map(item => item.str).join(' ');
 fullText += pageText + ' ';
 }
-const regex = /Endereço:\s*([^,]+?)\s*,\s*(\d+)\s*CEP:\s*(\d{8})/gi;
+const regex =
+  /ENDEREÇO:\s*([A-ZÀ-Ú\s]+?),\s*(\d{1,5})\s+CEP:\s*(\d{8})/gi;
 const matches = [...fullText.matchAll(regex)];
+
 if (matches.length === 0) {
 const cepRegex = /(\d{5})-?(\d{3})/g;
 const cepMatches = [...fullText.matchAll(cepRegex)];
@@ -1201,7 +1189,8 @@ showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 
 for (const match of matches) {
 const logradouro = match[1].trim();
 const numero = match[2].trim();
-const cep = match[3];
+const cepRaw = match[3];
+const cep = cepRaw.replace(/(\d{5})(\d{3})/, '$1-$2');
 const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
 document.getElementById('address-input').value = enderecoCompleto;
 await addAddress();
