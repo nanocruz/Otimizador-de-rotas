@@ -1146,7 +1146,13 @@ const textContent = await page.getTextContent();
 const pageText = textContent.items.map(item => item.str).join(' ');
 fullText += pageText + ' ';
 }
-const regex = /Endereço:\s*([^,]+),\s*(\d{1,6})\s+CEP:\s*(\d{8})/gi;
+
+fullText = fullText
+  .replace(/\n+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .toUpperCase();
+
+const regex = /ENDEREÇO:\s*([^,]+),\s*(\d{1,6})\s+CEP:\s*(\d{8})/gi;
 const matches = [...fullText.matchAll(regex)];
 
 if (matches.length === 0) {
