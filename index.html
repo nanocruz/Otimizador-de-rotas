@@ -1137,78 +1137,98 @@ async function processPdf(e) {
     }
 
     const loadingTask = PDFJS.getDocument(URL.createObjectURL(file));
+    const pdf = await loadingTask.promise;
+    let fullText = '';
+    
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n';
+    }
 
-const pdf = await loadingTask.promise;
-let fullText = '';
-for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-const page = await pdf.getPage(pageNum);
-const textContent = await page.getTextContent();
-const pageText = textContent.items.map(item => item.str).join(' ');
-fullText += pageText + ' ';
-}
+    // Procura por padrões como: "Nome da Rua, 123" seguido de "CEP: 12345678" ou "CEP: 12345-678"
+    const pattern1 = /([A-ZÀ-Ú][A-ZÀ-Ú\s\(\)]+?),\s*(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
+    const matches1 = [...fullText.matchAll(pattern1)];
+    
+    // Procura também por "ENDEREÇO: Rua, 123 CEP: 12345678"
+    const pattern2 = /ENDEREÇO:\s*([^,]+),\s*(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
+    const matches2 = [...fullText.matchAll(pattern2)];
+    
+    // Combina os dois resultados
+    const allMatches = [...matches1, ...matches2];
 
-fullText = fullText
-  .replace(/\n+/g, ' ')
-  .replace(/\s+/g, ' ')
-  .toUpperCase();
+    if (allMatches.length === 0) {
+      // Fallback: procura por CEPs e tenta extrair contexto
+      const cepRegex = /CEP:\s*(\d{5})-?(\d{3})/gi;
+      const cepMatches = [...fullText.matchAll(cepRegex)];
+      
+      if (cepMatches.length > 0) {
+        showStatus(`Encontrados ${cepMatches.length} CEPs. Extraindo endereços...`, 'info');
+        let addedCount = 0;
+        
+        for (const cepMatch of cepMatches) {
+          const cep = cepMatch[1] + cepMatch[2];
+          const cepIndex = cepMatch.index;
+          
+          // Pega até 150 caracteres antes do CEP
+          const contextStart = Math.max(0, cepIndex - 150);
+          const context = fullText.substring(contextStart, cepIndex).trim();
+          
+          // Procura por endereço com número: "Rua Nome, 123"
+          const addrMatch = context.match(/([A-ZÀ-Ú][A-ZÀ-Ú\s\(\)]+?),\s*(\d{1,6})\s*$/i);
+          
+          if (addrMatch) {
+            const logradouro = addrMatch[1].trim();
+            const numero = addrMatch[2].trim();
+            const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
+            
+            document.getElementById('address-input').value = enderecoCompleto;
+            await addAddress();
+            addedCount++;
+          }
+        }
+        
+        if (addedCount > 0) {
+          showStatus(`✅ ${addedCount} endereço(s) adicionado(s) com sucesso!`, 'success');
+          document.getElementById('optimize-btn').style.display = 'block';
+          renderAddressList();
+        } else {
+          showStatus('CEPs encontrados, mas não foi possível extrair endereços completos.', 'warning');
+        }
+        e.target.value = '';
+        return;
+      } else {
+        showStatus('Nenhum endereço ou CEP encontrado no PDF.', 'warning');
+        e.target.value = '';
+        return;
+      }
+    }
 
-const regex = /ENDEREÇO:\s*([^,]+),\s*(\d{1,6})\s+CEP:\s*(\d{8})/gi;
-const matches = [...fullText.matchAll(regex)];
-
-if (matches.length === 0) {
-const cepRegex = /(\d{5})-?(\d{3})/g;
-const cepMatches = [...fullText.matchAll(cepRegex)];
-if (cepMatches.length > 0) {
-showStatus(`Nenhum endereço no formato esperado, mas ${cepMatches.length} CEPs encontrados. Adicionando...`, 'info');
-let addedCount = 0;
-for (const cepMatch of cepMatches) {
-const cep = cepMatch[1] + cepMatch[2];
-const cepIndex = cepMatch.index;
-const contextStart = Math.max(0, fullText.lastIndexOf('\n', cepIndex));
-const contextEnd = fullText.indexOf('\n', cepIndex);
-const line = fullText.substring(contextStart, contextEnd !== -1 ? contextEnd : fullText.length).trim();
-const enderecoSemCep = line.replace(new RegExp(cep, 'g'), '').trim();
-const enderecoCompleto = `${enderecoSemCep} CEP: ${cep}`.trim();
-if (enderecoCompleto && enderecoCompleto !== `CEP: ${cep}`) {
-document.getElementById('address-input').value = enderecoCompleto;
-await addAddress();
-addedCount++;
-}
-}
-if (addedCount > 0) {
-showStatus(`✅ ${addedCount} endereço(s) adicionado(s) com sucesso do PDF!`, 'success');
-document.getElementById('optimize-btn').style.display = 'block';
-renderAddressList();
-} else {
-showStatus('Nenhum endereço ou CEP útil encontrado no texto do PDF.', 'warning');
-}
-e.target.value = '';
-return;
-} else {
-showStatus('Nenhum endereço encontrado. Verifique se o PDF contém texto selecionável (não imagem escaneada).', 'warning');
-e.target.value = '';
-return;
-}
-}
-showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 'info');
-for (const match of matches) {
-const logradouro = match[1].trim();
-const numero = match[2].trim();
-const cepRaw = match[3];
-const cep = cepRaw.replace(/(\d{5})(\d{3})/, '$1-$2');
-const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
-document.getElementById('address-input').value = enderecoCompleto;
-await addAddress();
-}
-showStatus(`✅ ${matches.length} endereços adicionados com sucesso do PDF!`, 'success');
-document.getElementById('optimize-btn').style.display = 'block';
-renderAddressList();
-} catch (err) {
-console.error('Erro ao processar PDF:', err);
-showStatus(`Erro ao ler o PDF: ${err.message}`, 'warning');
-} finally {
-e.target.value = '';
-}
+    showStatus(`Encontrados ${allMatches.length} endereços. Adicionando à lista...`, 'info');
+    
+    for (const match of allMatches) {
+      const logradouro = match[1].trim();
+      const numero = match[2].trim();
+      const cepPart1 = match[3];
+      const cepPart2 = match[4];
+      const cep = `${cepPart1}-${cepPart2}`;
+      
+      const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
+      document.getElementById('address-input').value = enderecoCompleto;
+      await addAddress();
+    }
+    
+    showStatus(`✅ ${allMatches.length} endereços adicionados com sucesso!`, 'success');
+    document.getElementById('optimize-btn').style.display = 'block';
+    renderAddressList();
+    
+  } catch (err) {
+    console.error('Erro ao processar PDF:', err);
+    showStatus(`Erro ao ler o PDF: ${err.message}`, 'warning');
+  } finally {
+    e.target.value = '';
+  }
 }
 </script>
 <script>
