@@ -1122,92 +1122,105 @@ if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
 function uploadPdf() {
 document.getElementById('pdf-upload').click();
 }
+// Função auxiliar para esperar a biblioteca carregar
+async function waitForPdfJsLib() {
+    return new Promise((resolve, reject) => {
+        const timeout = 10000; // Timeout de 10 segundos
+        const startTime = Date.now();
+
+        const checkLib = () => {
+            if (typeof pdfjsLib !== 'undefined') {
+                console.log("PDF.js carregado e configurado com sucesso!");
+                // Configura o workerSrc novamente, garantindo que esteja pronto
+                if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+                    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.worker.min.js';
+                }
+                resolve(pdfjsLib);
+            } else if (Date.now() - startTime > timeout) {
+                reject(new Error('Timeout: PDF.js não carregou em 10 segundos.'));
+            } else {
+                setTimeout(checkLib, 100); // Verifica a cada 100ms
+            }
+        };
+
+        checkLib(); // Inicia a verificação imediatamente
+    });
+}
+
+// Função para processar o PDF
 async function processPdf(e) {
-const file = e.target.files[0];
-if (!file) return;
-showStatus('Iniciando processamento do PDF...', 'info');
-const objectUrl = URL.createObjectURL(file);
-try {
-if (typeof pdfjsLib === 'undefined') {
-throw new Error('PDF.js não carregado. Recarregue a página.');
-}
-if (window.pdfjsWorkerConfig && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-pdfjsLib.GlobalWorkerOptions.workerSrc = window.pdfjsWorkerConfig.workerSrc;
-}
-const loadingTask = pdfjsLib.getDocument({
-url: objectUrl,
-maxImageSize: 20000000,
-isEvalSupported: false,
-});
-const timeoutPromise = new Promise((_, reject) => 
-setTimeout(() => reject(new Error('Timeout ao carregar PDF')), 30000)
-);
-const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
-showStatus(`PDF carregado! ${pdf.numPages} páginas encontradas.`, 'info');
-let fullText = '';
-let pagesWithText = 0;
-for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-try {
-const page = await pdf.getPage(pageNum);
-const textContent = await page.getTextContent();
-if (textContent.items && textContent.items.length > 0) {
-pagesWithText++;
-}
-const pageText = textContent.items.map(item => item.str).join(' ');
-fullText += pageText + ' ';
-if (pageNum % 5 === 0) {
-showStatus(`Processando página ${pageNum}/${pdf.numPages}...`, 'info');
-}
-} catch (pageError) {
-console.warn(`Erro na página ${pageNum}:`, pageError);
-continue;
-}
-}
-URL.revokeObjectURL(objectUrl);
-if (pagesWithText === 0) {
-throw new Error('O PDF não contém texto selecionável (pode ser imagem escaneada).');
-}
-const regex = /Endereço:\s*([^,]+?)\s*,\s*(\d+)\s*CEP:\s*(\d{8})/gi;
-const matches = [...fullText.matchAll(regex)];
-if (matches.length === 0) {
-const cepRegex = /(\d{5})-?(\d{3})/g;
-const cepMatches = [...fullText.matchAll(cepRegex)];
-if (cepMatches.length > 0) {
-showStatus(`Nenhum endereço formatado, mas ${cepMatches.length} CEP(s) encontrado(s)...`, 'info');
-let addedCount = 0;
-for (const cepMatch of cepMatches) {
-const cep = cepMatch[1] + cepMatch[2];
-document.getElementById('address-input').value = cep;
-await addAddress();
-addedCount++;
-}
-if (addedCount > 0) {
-showStatus(`✅ ${addedCount} CEP(s) adicionado(s)!`, 'success');
-}
-} else {
-throw new Error('Nenhum endereço ou CEP encontrado no PDF.');
-}
-} else {
-showStatus(`Encontrados ${matches.length} endereços. Adicionando...`, 'info');
-for (const match of matches) {
-const logradouro = match[1].trim();
-const numero = match[2].trim();
-const cep = match[3];
-const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
-document.getElementById('address-input').value = enderecoCompleto;
-await addAddress();
-}
-showStatus(`✅ ${matches.length} endereços adicionados!`, 'success');
-}
-document.getElementById('optimize-btn').style.display = 'block';
-renderAddressList();
-} catch (err) {
-console.error('Erro completo:', err);
-showStatus(`❌ Erro: ${err.message}`, 'warning');
-} finally {
-URL.revokeObjectURL(objectUrl);
-e.target.value = '';
-}
+    const file = e.target.files[0];
+    if (!file) return;
+
+    showStatus('Processando PDF...', 'info');
+
+    try {
+        // Agora, espera explicitamente pela biblioteca antes de continuar
+        await waitForPdfJsLib();
+
+        // A partir daqui, pdfjsLib está garantidamente disponível
+        const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
+        const pdf = await loadingTask.promise;
+        let fullText = '';
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            fullText += textContent.items.map(item => item.str).join(' ') + ' ';
+        }
+
+        // Restante da lógica de processamento do PDF permanece a mesma...
+        const regex = /Endereço:\s*(.*?)\s*CEP:\s*(\d{8})/gi;
+        const matches = [...fullText.matchAll(regex)];
+
+        if (matches.length === 0) {
+            const cepRegex = /(\d{5})-?(\d{3})/g;
+            const cepMatches = [...fullText.matchAll(cepRegex)];
+            if (cepMatches.length > 0) {
+                showStatus(`Nenhum endereço no formato esperado, mas ${cepMatches.length} CEPs encontrados. Adicionando...`, 'info');
+                let addedCount = 0;
+                for (const cepMatch of cepMatches) {
+                    const cep = cepMatch[1] + cepMatch[2];
+                    const cepIndex = cepMatch.index;
+                    const contextStart = Math.max(0, fullText.lastIndexOf('', cepIndex));
+                    const contextEnd = fullText.indexOf('', cepIndex);
+                    const line = fullText.substring(contextStart, contextEnd !== -1 ? contextEnd : fullText.length).trim();
+                    const enderecoSemCep = line.replace(new RegExp(cep, 'g'), '').trim();
+                    const enderecoCompleto = `${enderecoSemCep} CEP: ${cep}`.trim();
+                    if (enderecoCompleto && enderecoCompleto !== `CEP: ${cep}`) {
+                        document.getElementById('address-input').value = enderecoCompleto;
+                        await addAddress(); // Assumindo que addAddress é assíncrono
+                        addedCount++;
+                    }
+                }
+                if (addedCount > 0) {
+                    showStatus(`✅ ${addedCount} endereço(s) adicionado(s) com sucesso do PDF!`, 'success');
+                    document.getElementById('optimize-btn').style.display = 'block';
+                    renderAddressList();
+                } else {
+                    showStatus('Nenhum endereço ou CEP útil encontrado no texto do PDF.', 'warning');
+                }
+            } else {
+                showStatus('Nenhum endereço encontrado. Verifique se o PDF contém texto selecionável (não imagem escaneada).', 'warning');
+            }
+        } else {
+            showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 'info');
+            for (const match of matches) {
+                const logradouro = match[1].trim();
+                const cep = match[2];
+                const enderecoCompleto = `${logradouro}, CEP: ${cep}`;
+                document.getElementById('address-input').value = enderecoCompleto;
+                await addAddress(); // Assumindo que addAddress é assíncrono
+            }
+            showStatus(`✅ ${matches.length} endereços adicionados com sucesso do PDF!`, 'success');
+            document.getElementById('optimize-btn').style.display = 'block';
+            renderAddressList();
+        }
+    } catch (err) {
+        console.error('Erro ao processar PDF:', err);
+        showStatus(`Erro ao ler o PDF: ${err.message}`, 'warning');
+    } finally {
+        e.target.value = ''; // Limpa o input de arquivo
+    }
 }
 </script>
 </body>
