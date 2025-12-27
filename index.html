@@ -1147,7 +1147,7 @@ async function processPdf(e) {
     const PDFJS = window.pdfjsLib;
 
     if (!PDFJS || !PDFJS.getDocument) {
-      throw new Error('PDF.js não disponível no escopo global.');
+      throw new Error('Biblioteca PDF não carregada. Recarregue a página.');
     }
 
     const loadingTask = PDFJS.getDocument(URL.createObjectURL(file));
@@ -1217,5 +1217,16 @@ e.target.value = '';
 }
 }
 </script>
+<script>
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    console.log('PDFJS carregado corretamente:', window.pdfjsLib);
+  } else {
+    console.error('PDFJS NÃO carregou');
+  }
+</script>
+
 </body>
 </html>
