@@ -1148,6 +1148,7 @@ fullText += pageText + ' ';
 }
 const regex = /Endereço:\s*([^,]+),\s*(\d{1,6})\s+CEP:\s*(\d{8})/gi;
 const matches = [...fullText.matchAll(regex)];
+
 if (matches.length === 0) {
 const cepRegex = /(\d{5})-?(\d{3})/g;
 const cepMatches = [...fullText.matchAll(cepRegex)];
