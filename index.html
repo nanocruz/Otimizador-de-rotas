@@ -1146,10 +1146,8 @@ const textContent = await page.getTextContent();
 const pageText = textContent.items.map(item => item.str).join(' ');
 fullText += pageText + ' ';
 }
-const regex =
-  /ENDEREÇO:\s*([A-ZÀ-Ú\s]+?),\s*(\d{1,5})\s+CEP:\s*(\d{8})/gi;
+const regex = /Endereço:\s*([^,]+),\s*(\d{1,6})\s+CEP:\s*(\d{8})/gi;
 const matches = [...fullText.matchAll(regex)];
-
 if (matches.length === 0) {
 const cepRegex = /(\d{5})-?(\d{3})/g;
 const cepMatches = [...fullText.matchAll(cepRegex)];
