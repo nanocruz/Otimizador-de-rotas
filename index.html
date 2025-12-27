@@ -11,14 +11,22 @@
   window.pdfjsLib.GlobalWorkerOptions.workerSrc =
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.js';
 </script>
-
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-  function configurePdfWorker() {
-    if (typeof pdfjsLib !== 'undefined') {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.worker.min.js';
-    }
+  // 🔥 FIX DEFINITIVO: garante pdfjsLib no escopo global
+  if (typeof window.pdfjsLib === 'undefined' && typeof window.pdfjsDistBuildPdf !== 'undefined') {
+    window.pdfjsLib = window.pdfjsDistBuildPdf;
+  }
+
+  if (typeof window.pdfjsLib !== 'undefined') {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
 </script>
+<script>
+  console.log('PDFJS carregado:', window.pdfjsLib);
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
@@ -1130,14 +1138,20 @@ function uploadPdf() {
 document.getElementById('pdf-upload').click();
 }
 async function processPdf(e) {
-const file = e.target.files[0];
-if (!file) return;
-showStatus('Processando PDF...', 'info');
-try {
-if (typeof pdfjsLib === 'undefined') {
-throw new Error('Biblioteca PDF não carregada. Recarregue a página.');
-}
-const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
+  const file = e.target.files[0];
+  if (!file) return;
+
+  showStatus('Processando PDF...', 'info');
+
+  try {
+    const PDFJS = window.pdfjsLib;
+
+    if (!PDFJS || !PDFJS.getDocument) {
+      throw new Error('PDF.js não disponível no escopo global.');
+    }
+
+    const loadingTask = PDFJS.getDocument(URL.createObjectURL(file));
+
 const pdf = await loadingTask.promise;
 let fullText = '';
 for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
