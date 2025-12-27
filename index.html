@@ -1122,31 +1122,35 @@ if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
 function uploadPdf() {
 document.getElementById('pdf-upload').click();
 }
-// Função auxiliar para esperar a biblioteca carregar
+// Função auxiliar para esperar a biblioteca carregar e configurar o worker
 async function waitForPdfJsLib() {
     return new Promise((resolve, reject) => {
-        const timeout = 10000; // Timeout de 10 segundos
+        const timeout = 15000; // Aumenta o timeout para 15 segundos
         const startTime = Date.now();
 
         const checkLib = () => {
             if (typeof pdfjsLib !== 'undefined') {
-                console.log("PDF.js carregado e configurado com sucesso!");
-                // Configura o workerSrc novamente, garantindo que esteja pronto
+                console.log("PDF.js carregado. Configurando worker...");
+                // Verifica e configura o workerSrc *somente se* pdfjsLib estiver disponível
                 if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+                    // Define o caminho para o worker script da mesma versão do PDF.js
                     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.worker.min.js';
+                    console.log("Worker do PDF.js configurado.");
                 }
+                // Resolve a Promise, indicando que tudo está pronto
                 resolve(pdfjsLib);
             } else if (Date.now() - startTime > timeout) {
-                reject(new Error('Timeout: PDF.js não carregou em 10 segundos.'));
+                reject(new Error('Timeout: PDF.js não carregou em 15 segundos.'));
             } else {
-                setTimeout(checkLib, 100); // Verifica a cada 100ms
+                // Verifica novamente em 200ms
+                setTimeout(checkLib, 200);
             }
         };
 
         checkLib(); // Inicia a verificação imediatamente
     });
 }
-
+// Função para processar o PDF
 // Função para processar o PDF
 async function processPdf(e) {
     const file = e.target.files[0];
@@ -1155,10 +1159,10 @@ async function processPdf(e) {
     showStatus('Processando PDF...', 'info');
 
     try {
-        // Agora, espera explicitamente pela biblioteca antes de continuar
+        // Espera pela biblioteca e pela configuração do worker
         await waitForPdfJsLib();
+        console.log("Iniciando leitura do PDF com pdfjsLib:", typeof pdfjsLib);
 
-        // A partir daqui, pdfjsLib está garantidamente disponível
         const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
         const pdf = await loadingTask.promise;
         let fullText = '';
@@ -1217,6 +1221,7 @@ async function processPdf(e) {
         }
     } catch (err) {
         console.error('Erro ao processar PDF:', err);
+        // A mensagem de erro agora pode vir de waitForPdfJsLib ou de pdfjsLib
         showStatus(`Erro ao ler o PDF: ${err.message}`, 'warning');
     } finally {
         e.target.value = ''; // Limpa o input de arquivo
