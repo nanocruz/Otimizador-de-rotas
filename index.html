@@ -6,10 +6,13 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Otimizador de Rotas</title>
-// No seu HTML, altere para:
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.min.js" onload="configurePdfWorker()"></script>
 <script>
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  function configurePdfWorker() {
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.worker.min.js';
+    }
+  }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
@@ -22,7 +25,7 @@ box-sizing: border-box;
 }
 body {
 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-background: #f5f5f5;
+background: #FFB80C;
 color: #333;
 min-height: 100vh;
 padding: 20px;
@@ -1121,50 +1124,78 @@ if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
 function uploadPdf() {
 document.getElementById('pdf-upload').click();
 }
-async function processPdf(e ) {
-    const file = e.target.files[0];
-    if (!file) return;
-    showStatus('Processando PDF...', 'info');
-
-    try {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        let fullText = '';
-
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            // Une os itens mantendo um espaço para evitar colar palavras
-            const pageText = textContent.items.map(item => item.str).join(' ');
-            fullText += pageText + '\n';
-        }
-
-        // Regex mais flexível para CEP (com ou sem hífen)
-        const cepRegex = /(\d{5})-?(\d{3})/g;
-        const matches = fullText.matchAll(cepRegex);
-        let foundCount = 0;
-
-        for (const match of matches) {
-            const cep = match[0];
-            // Em vez de buscar a linha, pegamos um pedaço do texto ao redor
-            const start = Math.max(0, match.index - 100);
-            const end = Math.min(fullText.length, match.index + 100);
-            const context = fullText.substring(start, end).replace(/\n/g, ' ').trim();
-            
-            // Adiciona o endereço usando sua função addAddress existente
-            document.getElementById('address-input').value = context;
-            await addAddress();
-            foundCount++;
-        }
-
-        if (foundCount > 0) {
-            showStatus(`✅ ${foundCount} endereços processados!`, 'success');
-        } else {
-            showStatus('Nenhum CEP encontrado. O PDF pode ser uma imagem.', 'warning');
-        }
-    } catch (err) {
-        showStatus('Erro ao ler PDF: ' + err.message, 'warning');
-    }
+async function processPdf(e) {
+const file = e.target.files[0];
+if (!file) return;
+showStatus('Processando PDF...', 'info');
+try {
+if (typeof pdfjsLib === 'undefined') {
+throw new Error('Biblioteca PDF não carregada. Recarregue a página.');
+}
+const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
+const pdf = await loadingTask.promise;
+let fullText = '';
+for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+const page = await pdf.getPage(pageNum);
+const textContent = await page.getTextContent();
+const pageText = textContent.items.map(item => item.str).join(' ');
+fullText += pageText + ' ';
+}
+const regex = /Endereço:\s*([^,]+?)\s*,\s*(\d+)\s*CEP:\s*(\d{8})/gi;
+const matches = [...fullText.matchAll(regex)];
+if (matches.length === 0) {
+const cepRegex = /(\d{5})-?(\d{3})/g;
+const cepMatches = [...fullText.matchAll(cepRegex)];
+if (cepMatches.length > 0) {
+showStatus(`Nenhum endereço no formato esperado, mas ${cepMatches.length} CEPs encontrados. Adicionando...`, 'info');
+let addedCount = 0;
+for (const cepMatch of cepMatches) {
+const cep = cepMatch[1] + cepMatch[2];
+const cepIndex = cepMatch.index;
+const contextStart = Math.max(0, fullText.lastIndexOf('\n', cepIndex));
+const contextEnd = fullText.indexOf('\n', cepIndex);
+const line = fullText.substring(contextStart, contextEnd !== -1 ? contextEnd : fullText.length).trim();
+const enderecoSemCep = line.replace(new RegExp(cep, 'g'), '').trim();
+const enderecoCompleto = `${enderecoSemCep} CEP: ${cep}`.trim();
+if (enderecoCompleto && enderecoCompleto !== `CEP: ${cep}`) {
+document.getElementById('address-input').value = enderecoCompleto;
+await addAddress();
+addedCount++;
+}
+}
+if (addedCount > 0) {
+showStatus(`✅ ${addedCount} endereço(s) adicionado(s) com sucesso do PDF!`, 'success');
+document.getElementById('optimize-btn').style.display = 'block';
+renderAddressList();
+} else {
+showStatus('Nenhum endereço ou CEP útil encontrado no texto do PDF.', 'warning');
+}
+e.target.value = '';
+return;
+} else {
+showStatus('Nenhum endereço encontrado. Verifique se o PDF contém texto selecionável (não imagem escaneada).', 'warning');
+e.target.value = '';
+return;
+}
+}
+showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 'info');
+for (const match of matches) {
+const logradouro = match[1].trim();
+const numero = match[2].trim();
+const cep = match[3];
+const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
+document.getElementById('address-input').value = enderecoCompleto;
+await addAddress();
+}
+showStatus(`✅ ${matches.length} endereços adicionados com sucesso do PDF!`, 'success');
+document.getElementById('optimize-btn').style.display = 'block';
+renderAddressList();
+} catch (err) {
+console.error('Erro ao processar PDF:', err);
+showStatus(`Erro ao ler o PDF: ${err.message}`, 'warning');
+} finally {
+e.target.value = '';
+}
 }
 </script>
 </body>
