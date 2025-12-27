@@ -1147,53 +1147,51 @@ async function processPdf(e) {
       fullText += pageText + ' ';
     }
 
-    // Regex que captura TUDO após "Endereço:" até o CEP completo
-    // Formato: Endereço: [QUALQUER COISA], [NÚMERO] CEP: [12345-678 ou 12345678]
-    const pattern = /Endereço:\s*(.+?),\s*(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
-    const matches = [...fullText.matchAll(pattern)];
+// Regex ajustada: Captura TUDO após "Endereço:" até o número e depois o CEP
+const pattern = /Endereço:\s*(.+?)\s+(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
+const matches = [...fullText.matchAll(pattern)];
 
-    if (matches.length === 0) {
-      showStatus('Nenhum endereço no formato "Endereço: ... CEP: ..." encontrado.', 'warning');
-      e.target.value = '';
-      return;
-    }
+if (matches.length === 0) {
+  showStatus('Nenhum endereço no formato "Endereço: ... CEP: ..." encontrado.', 'warning');
+  e.target.value = '';
+  return;
+}
 
-    showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 'info');
-    
-    for (const match of matches) {
-      const logradouro = match[1].trim(); // Tudo entre "Endereço:" e a vírgula antes do número
-      const numero = match[2].trim(); // O número
-      const cepPart1 = match[3]; // Primeira parte do CEP (5 dígitos)
-      const cepPart2 = match[4]; // Segunda parte do CEP (3 dígitos)
-      
-      // Monta o endereço completo EXATAMENTE como está no PDF
-      const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cepPart1}-${cepPart2}`;
-      
-      // Adiciona diretamente à lista SEM passar pelo input
-      const coords = await geocodeAddressFull(enderecoCompleto);
-      
-      if (coords) {
-        addresses.push({
-          id: Date.now() + Math.random(), // Garante ID único
-          text: enderecoCompleto, // Mantém o texto completo original
-          coords: coords,
-          completed: false
-        });
-      } else {
-        // Mesmo sem coordenadas, adiciona com o texto completo
-        addresses.push({
-          id: Date.now() + Math.random(),
-          text: enderecoCompleto,
-          coords: null,
-          completed: false
-        });
-        showStatus(`Endereço adicionado (localização aproximada): ${enderecoCompleto}`, 'info');
-      }
-      
-      // Pequeno delay para não sobrecarregar a API
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-    
+showStatus(`Encontrados ${matches.length} endereços. Adicionando à lista...`, 'info');
+
+for (const match of matches) {
+  const logradouro = match[1].trim(); // Tudo entre "Endereço:" e o primeiro espaço antes do número
+  const numero = match[2].trim(); // O número
+  const cepPart1 = match[3]; // Primeira parte do CEP (5 dígitos)
+  const cepPart2 = match[4]; // Segunda parte do CEP (3 dígitos)
+
+  // Monta o endereço completo EXATAMENTE como está no PDF
+  const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cepPart1}-${cepPart2}`;
+
+  // Adiciona diretamente à lista SEM passar pelo input
+  const coords = await geocodeAddressFull(enderecoCompleto);
+
+  if (coords) {
+    addresses.push({
+      id: Date.now() + Math.random(), // Garante ID único
+      text: enderecoCompleto, // Mantém o texto completo original
+      coords: coords,
+      completed: false
+    });
+  } else {
+    // Mesmo sem coordenadas, adiciona com o texto completo
+    addresses.push({
+      id: Date.now() + Math.random(),
+      text: enderecoCompleto,
+      coords: null,
+      completed: false
+    });
+    showStatus(`Endereço adicionado (localização aproximada): ${enderecoCompleto}`, 'info');
+  }
+
+  // Pequeno delay para não sobrecarregar a API
+  await new Promise(resolve => setTimeout(resolve, 500));
+}    
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
     showStatus(`✅ ${matches.length} endereços adicionados com sucesso do PDF!`, 'success');
