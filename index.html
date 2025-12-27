@@ -21,7 +21,7 @@ box-sizing: border-box;
 }
 body {
 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-background: #f5f5f5;
+background: #FFB80C;
 color: #333;
 min-height: 100vh;
 padding: 20px;
@@ -522,32 +522,21 @@ console.error('Erro na geocodificação (Nominatim):', e);
 return null;
 }
 async function addAddress() {
-  if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
-  const input = document.getElementById('address-input');
-  let text = input.value.trim();
-  if (!text) return;
-
-  // Salva o texto original para não perder o número depois
-  input.dataset.originalText = text;
-
-  const cepResult = await processCEP(text);
-  if (cepResult?.success && cepResult.coords) {
-    // Se o CEP retornou endereço mas sem número, tenta anexar o número do input original
-    let finalAddress = cepResult.address;
-    if (!finalAddress.match(/\d+/) && text.match(/,\s*(\d+)/)) {
-        finalAddress = finalAddress.replace(',', `, ${text.match(/,\s*(\d+)/)[1]},`);
-    }
-
-    addresses.push({ id: Date.now(), text: finalAddress, coords: cepResult.coords, completed: false });
-    input.value = '';
-    renderAddressList();
-    document.getElementById('optimize-btn').style.display = 'block';
-    showStatus('Endereço adicionado!', 'success');
-    return;
-  }
-  await searchAndSelectAddress(text);
+if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
+const input = document.getElementById('address-input');
+let text = input.value.trim();
+if (!text) return;
+const cepResult = await processCEP(text);
+if (cepResult?.success && cepResult.coords) {
+addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, completed: false });
+input.value = '';
+renderAddressList();
+document.getElementById('optimize-btn').style.display = 'block';
+showStatus('Endereço adicionado via CEP!', 'success');
+return;
 }
-
+await searchAndSelectAddress(text);
+}
 async function searchAndSelectAddress(query) {
 const suggestionsContainer = document.getElementById('suggestions-container');
 suggestionsContainer.style.display = 'block';
