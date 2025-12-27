@@ -6,11 +6,12 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Otimizador de Rotas</title>
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.min.js" onload="configurePdfWorker()"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.11.338/build/pdf.min.js" onload="configurePdfWorker()"></script>
+
 <script>
 function configurePdfWorker() {
   if (typeof pdfjsLib !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.11.338/build/pdf.worker.min.js';
     console.log("Biblioteca PDF.js carregada com sucesso.");
   } else {
     console.error("Biblioteca PDF.js não carregada.");
