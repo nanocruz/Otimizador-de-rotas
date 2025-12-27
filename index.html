@@ -579,39 +579,31 @@ setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
 }
 }
 function selectSuggestion(index) {
-  const result = window.pendingSuggestions?.[index];
-  if (!result) return;
-  
-  const originalInput = document.getElementById('address-input').dataset.originalText || '';
-  const addr = result.address || {};
-  
-  // Tenta extrair o número do input original se o mapa não retornou um
-  let houseNumber = addr.house_number || '';
-  if (!houseNumber) {
-    const numMatch = originalInput.match(/,\s*(\d+)/);
-    if (numMatch) houseNumber = numMatch[1];
-  }
-
-  let displayText = `${addr.road || ''}${houseNumber ? ', ' + houseNumber : ''}`;
-  if (addr.suburb) displayText += `, ${addr.suburb}`;
-  if (addr.city) displayText += `, ${addr.city}`;
-  
-  addresses.push({
-    id: Date.now(),
-    text: displayText,
-    coords: {
-      lat: parseFloat(result.lat),
-      lon: parseFloat(result.lon),
-      display_name: result.display_name
-    },
-    completed: false
-  });
-
-  document.getElementById('address-input').value = '';
-  renderAddressList();
-  document.getElementById('optimize-btn').style.display = 'block';
-  document.getElementById('suggestions-container').style.display = 'none';
-  showStatus('Endereço adicionado com número!', 'success');
+const result = window.pendingSuggestions?.[index];
+if (!result) return;
+const addr = result.address || {};
+let displayText = result.display_name;
+if (addr.road || addr.house_number) {
+displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
+if (addr.suburb) displayText += `, ${addr.suburb}`;
+if (addr.city) displayText += `, ${addr.city}`;
+if (addr.state) displayText += ` - ${addr.state}`;
+}
+addresses.push({
+id: Date.now(),
+text: displayText,
+coords: {
+lat: parseFloat(result.lat),
+lon: parseFloat(result.lon),
+display_name: result.display_name
+},
+completed: false
+});
+document.getElementById('address-input').value = '';
+renderAddressList();
+document.getElementById('optimize-btn').style.display = 'block';
+document.getElementById('suggestions-container').style.display = 'none';
+showStatus('Endereço adicionado!', 'success');
 }
 function setBaseLocation() {
 const input = document.getElementById('base-location-input');
