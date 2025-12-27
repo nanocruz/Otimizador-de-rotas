@@ -8,11 +8,15 @@
 <title>Otimizador de Rotas</title>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.min.js" onload="configurePdfWorker()"></script>
 <script>
-  function configurePdfWorker() {
-    if (typeof pdfjsLib !== 'undefined') {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.worker.min.js';
-    }
+function configurePdfWorker() {
+  if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@5.4.449/legacy/build/pdf.worker.min.js';
+    console.log("Biblioteca PDF.js carregada com sucesso.");
+  } else {
+    console.error("Biblioteca PDF.js não carregada.");
   }
+}
+
 </script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
@@ -1125,6 +1129,7 @@ function uploadPdf() {
 document.getElementById('pdf-upload').click();
 }
 async function processPdf(e) {
+console.log("Iniciando o processamento do PDF..."); // Adicionado para log
 const file = e.target.files[0];
 if (!file) return;
 showStatus('Processando PDF...', 'info');
