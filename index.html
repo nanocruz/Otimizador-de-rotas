@@ -299,7 +299,6 @@ async function processCEP(text) {
       
       showStatus('CEP encontrado!', 'success');
       
-      // CORRIGIDO: usa geocodeBrasil
       let coords = await geocodeBrasil(endereco);
       if (!coords) {
         const cityState = `${data.localidade}, ${data.uf}`;
@@ -308,7 +307,7 @@ async function processCEP(text) {
       
       return {
         success: true,
-        address: endereco,
+        address: endereco,  // Endereço formatado
         coords: coords
       };
     } catch (e) {
@@ -363,19 +362,23 @@ async function calculateRealDistance(from, to) {
 // --- Funções restantes mantidas com pequenas melhorias ---
 async function addAddress() {
   if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
+  
   const input = document.getElementById('address-input');
   let text = input.value.trim();
   if (!text) return;
-
+  
+  // 👇 SALVA O TEXTO ORIGINAL PRIMEIRO 👈
+  const enderecoOriginal = text;
+  
   // Tenta processar como CEP
   const cepResult = await processCEP(text);
   if (cepResult?.success) {
     // Verifica se as coordenadas são válidas
     if (cepResult.coords && cepResult.coords.lat != null && cepResult.coords.lon != null) {
       addresses.push({
-        id: Date.now(),
-        text: cepResult.address,
-        coords: cepResult.coords,
+        id: Date.now() + Math.random(),
+        text: addr,  // 👈 MANTÉM O TEXTO EXTRAÍDO DO PDF
+        coords: coords || null,
         completed: false
       });
       input.value = '';
@@ -388,7 +391,7 @@ async function addAddress() {
       return;
     }
   }
-
+  
   // Caso contrário, busca via Nominatim
   const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
   const coords = await geocodeBrasil(fullQuery);
@@ -397,7 +400,7 @@ async function addAddress() {
   if (coords && coords.lat != null && coords.lon != null) {
     addresses.push({
       id: Date.now(),
-      text: text,
+      text: enderecoOriginal,  // 👈 MANTÉM O ORIGINAL AQUI TAMBÉM
       coords: coords,
       completed: false
     });
@@ -410,6 +413,7 @@ async function addAddress() {
     await searchAndSelectAddress(text);
   }
 }
+
 async function searchAndSelectAddress(query) {
   const suggestionsContainer = document.getElementById('suggestions-container');
   suggestionsContainer.style.display = 'block';
