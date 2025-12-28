@@ -395,9 +395,10 @@ Nenhuma localização base definida. Por favor, defina para continuar.
 <h3 style="margin-bottom: 10px; color: #333;">Ponto de Partida</h3>
 <p style="margin-bottom: 15px; font-size: 14px; color: #555;">De onde você vai iniciar a rota?</p>
 <div class="input-group">
-<input type="text" id="departure-input" placeholder="Ex: Av. Paulista, 1000 ou CEP 01310-100" />
+<input type="text" id="departure-input" placeholder="Ex: Av. Paulista, 1000 ou 01310-100, 1000" />
 <button class="btn btn-primary" onclick="setDepartureAddress()">+</button>
 </div>
+<div id="departure-suggestions" class="address-list" style="display: none;"></div>
 <button class="btn btn-voice" style="width:100%; margin-top:10px;" onclick="setDepartureCurrentLocation()">
 Usar Minha Localização Atual
 </button>
@@ -639,19 +640,87 @@ document.getElementById('base-location-display').textContent = 'Falha ao definir
 }
 }
 async function setDepartureAddress() {
-const input = document.getElementById('departure-input');
-const text = input.value.trim();
-if (!text) return showStatus('Digite um endereço de partida.', 'warning');
-const cepResult = await processCEP(text);
-const addressToUse = cepResult?.success ? cepResult.address : text;
-const coords = await geocodeAddressFull(addressToUse);
-if (coords) {
-departure = { text: addressToUse, coords };
-document.getElementById('departure-display').textContent = coords.display_name;
-showStatus('Ponto de partida definido!', 'success');
-} else {
-showStatus('Endereço de partida não encontrado.', 'warning');
+  const input = document.getElementById('departure-input');
+  let text = input.value.trim();
+  if (!text) return showStatus('Digite um endereço de partida.', 'warning');
+  const cepResult = await processCEP(text);
+  if (cepResult?.success) {
+    const coords = cepResult.coords || await geocodeAddressFull(cepResult.address);
+    if (!coords) {
+      showStatus('Endereço não encontrado.', 'warning');
+      return;
+    }
+    departure = { text: cepResult.address, coords };
+    document.getElementById('departure-display').textContent = departure.coords.display_name || departure.text;
+    input.value = '';
+    showStatus('Ponto de partida definido!', 'success');
+    return;
+  }
+  await searchAndSelectDeparture(text);
 }
+async function searchAndSelectDeparture(query) {
+  const suggestionsContainer = document.getElementById('departure-suggestions');
+  suggestionsContainer.style.display = 'block';
+  suggestionsContainer.innerHTML = '<div class="status-bar status-info">Buscando endereços...</div>';
+  try {
+    const cityState = `${userLocation.city}, ${userLocation.state}, Brasil`;
+    const fullQuery = `${query}, ${cityState}`;
+    const resp = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`,
+      { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
+    );
+    const results = await resp.json();
+    if (!results || results.length === 0) {
+      suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Nenhum endereço encontrado. Tente com CEP.</div>';
+      setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
+      return;
+    }
+    let html = '<h4 style="margin:10px 0;color:#333;">Escolha o endereço correto:</h4>';
+    results.forEach((res, i) => {
+      const addr = res.address || {};
+      const street = addr.road || '';
+      const number = addr.house_number || '';
+      const neighborhood = addr.suburb || addr.neighbourhood || addr.city_district || '—';
+      const postcode = addr.postcode || '';
+      const city = addr.city || userLocation.city;
+      const display = `${street}${number ? ', ' + number : ''} – ${neighborhood}${postcode ? ' (CEP: ' + postcode + ')' : ''}`;
+      html += `
+        <div class="address-item suggestion-item" onclick="selectDepartureSuggestion(${i})">
+          <div style="font-size:14px;">${display}</div>
+          <small style="color:#666;">${city}, ${userLocation.state}</small>
+        </div>`;
+    });
+    suggestionsContainer.innerHTML = html;
+    window.pendingDepartureSuggestions = results;
+  } catch (e) {
+    console.error('Erro ao buscar sugestões:', e);
+    suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca. Tente novamente.</div>';
+    setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
+  }
+}
+function selectDepartureSuggestion(index) {
+  const result = window.pendingDepartureSuggestions?.[index];
+  if (!result) return;
+  const addr = result.address || {};
+  let displayText = result.display_name;
+  if (addr.road || addr.house_number) {
+    displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
+    if (addr.suburb) displayText += `, ${addr.suburb}`;
+    if (addr.city) displayText += `, ${addr.city}`;
+    if (addr.state) displayText += ` - ${addr.state}`;
+  }
+  departure = {
+    text: displayText,
+    coords: {
+      lat: parseFloat(result.lat),
+      lon: parseFloat(result.lon),
+      display_name: result.display_name
+    }
+  };
+  document.getElementById('departure-input').value = '';
+  document.getElementById('departure-display').textContent = departure.coords.display_name || departure.text;
+  document.getElementById('departure-suggestions').style.display = 'none';
+  showStatus('Ponto de partida adicionado!', 'success');
 }
 function setDepartureCurrentLocation() {
 if (!navigator.geolocation) return showStatus('Geolocalização não suportada.', 'warning');
@@ -949,6 +1018,7 @@ document.getElementById('departure-input').value = '';
 document.getElementById('departure-display').textContent = 'Nenhum ponto de partida definido.';
 document.getElementById('address-input').value = '';
 document.getElementById('suggestions-container').style.display = 'none';
+document.getElementById('departure-suggestions').style.display = 'none';
 stopCamera();
 }
 function requestVoicePermissionAndStart() {
