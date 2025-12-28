@@ -168,6 +168,12 @@ let distanceCache = new Map();
 function getCacheKey(lat1, lon1, lat2, lon2) {
   const p1 = `${lat1.toFixed(6)},${lon1.toFixed(6)}`;
   const p2 = `${lat2.toFixed(6)},${lon2.toFixed(6)}`;
+  return p1 < p2 ? `${p1}_${p2}` : `${p2}_${p1}`;
+}
+
+function getCacheKey(lat1, lon1, lat2, lon2) {
+  const p1 = `${lat1.toFixed(6)},${lon1.toFixed(6)}`;
+  const p2 = `${lat2.toFixed(6)},${lon2.toFixed(6)}`;
   return p1 < p2 ? `${p1}|${p2}` : `${p2}|${p1}`;
 }
 
@@ -274,32 +280,42 @@ function haversine(from, to) {
 }
 
 async function processCEP(text) {
-  const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
+  const cepMatch = text.match(/cep\s*(\d{5})-?(\d{3})(.*)?/i);
   if (cepMatch) {
-    const cep = cepMatch[1] + cepMatch[2];
-    const numero = cepMatch[3] || '';
+    const cep = `${cepMatch[1]}${cepMatch[2]}`;
+    const numero = cepMatch[3]?.trim();
+    
     showStatus('Buscando CEP...', 'info');
     try {
       const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
       const data = await resp.json();
+      
       if (data.erro) throw new Error('CEP não encontrado');
-      let endereco = data.logradouro || '';
+      
+      let endereco = data.logradouro;
       if (numero) endereco += `, ${numero}`;
       if (data.bairro) endereco += `, ${data.bairro}`;
       endereco += `, ${data.localidade}, ${data.uf}`;
+      
       showStatus('CEP encontrado!', 'success');
-      let coords = await geocodeBrasil(`${endereco}, Brasil`);
+      
+      // CORRIGIDO: usa geocodeBrasil
+      let coords = await geocodeBrasil(endereco);
       if (!coords) {
         const cityState = `${data.localidade}, ${data.uf}`;
         coords = await geocodeBrasil(cityState);
       }
-      return { success: true, address: endereco, coords: coords };
+      
+      return {
+        success: true,
+        address: endereco,
+        coords: coords
+      };
     } catch (e) {
-      showStatus('CEP inválido: ' + e.message, 'warning');
-      return { success: false, address: text, coords: null };
+      showStatus(`CEP inválido: ${e.message}`, 'warning');
     }
   }
-  return null;
+  return { success: false, address: text, coords: null };
 }
 
 async function calculateRealDistance(from, to) {
@@ -920,31 +936,52 @@ function uploadPdf() {
 async function processPdf(e) {
   const file = e.target.files[0];
   if (!file) return;
-  showStatus('Lendo PDF (Otimizado)...', 'info');
+  
+  showStatus('Lendo PDF Otimizado...', 'info');
   try {
     const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
     let fullText = '';
+    
+    // Extrai texto de todas as páginas
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const text = await page.getTextContent();
-      fullText += text.items.map(item => item.str).join(' ') + ' ';
+      fullText += text.items.map(item => item.str).join(' ') + '\n';
     }
-    const pattern = /Endereço:\s*(.+?),\s*(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
+    
+    // Padrão para endereços + CEP brasileiro
+    const pattern = /(?:Endereco|Endereço|Destino)[:\s]*([^\n]{1,100}?)(?:\sCEP\s*)?(\d{5}-\d{3})?/gi;
     const matches = [...fullText.matchAll(pattern)];
+    
     if (matches.length === 0) {
       showStatus('Nenhum endereço encontrado.', 'warning');
       return;
     }
+    
     showStatus(`Processando ${matches.length} endereços...`, 'info');
+    
+    // Processa cada endereço com geocodeBrasil (CORRIGIDO)
     for (const m of matches) {
-      const addr = `${m[1].trim()}, ${m[2].trim()}, CEP: ${m[3]}-${m[4]}`;
+      const addr = m[1].trim();
+      if (!addr) continue;
+      
+      // Usa geocodeBrasil (nova função) ao invés de geocodeBasic
       const coords = await geocodeBrasil(addr);
-      addresses.push({ id: Date.now() + Math.random(), text: addr, coords: coords || null, completed: false });
-      await new Promise(r => setTimeout(r, 300));
+      
+      addresses.push({
+        id: Date.now() + Math.random(),
+        text: addr,
+        coords: coords || null,
+        completed: false
+      });
+      
+      await new Promise(r => setTimeout(r, 300)); // Rate limit
     }
+    
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
     showStatus(`${matches.length} endereços adicionados!`, 'success');
+    
   } catch (err) {
     console.error('Erro no PDF:', err);
     showStatus('Erro no PDF.', 'warning');
