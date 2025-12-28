@@ -338,11 +338,17 @@ async function addAddress() {
   let text = input.value.trim();
   if (!text) return;
 
+  showStatus('Buscando endereço...', 'info');
+
   // Tenta processar como CEP
   const cepResult = await processCEP(text);
   if (cepResult?.success) {
     // Verifica se as coordenadas são válidas
-    if (cepResult.coords && cepResult.coords.lat != null && cepResult.coords.lon != null) {
+    if (cepResult.coords && 
+        typeof cepResult.coords.lat === 'number' && 
+        typeof cepResult.coords.lon === 'number' &&
+        !isNaN(cepResult.coords.lat) && 
+        !isNaN(cepResult.coords.lon)) {
       addresses.push({
         id: Date.now(),
         text: cepResult.address,
@@ -352,11 +358,11 @@ async function addAddress() {
       input.value = '';
       renderAddressList();
       document.getElementById('optimize-btn').style.display = 'block';
-      showStatus('Endereço adicionado!', 'success');
+      showStatus('Endereço adicionado com sucesso!', 'success');
       return;
     } else {
-      showStatus('Não foi possível localizar o endereço no mapa.', 'warning');
-      return;
+      showStatus('CEP encontrado mas sem coordenadas válidas. Tentando busca alternativa...', 'warning');
+      // Continua para tentar geocodificação normal
     }
   }
 
@@ -364,8 +370,12 @@ async function addAddress() {
   const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
   const coords = await geocodeBasic(fullQuery);
   
-  // Verifica se a geocodificação foi bem-sucedida
-  if (coords && coords.lat != null && coords.lon != null) {
+  // Verifica se a geocodificação foi bem-sucedida com validação rigorosa
+  if (coords && 
+      typeof coords.lat === 'number' && 
+      typeof coords.lon === 'number' &&
+      !isNaN(coords.lat) && 
+      !isNaN(coords.lon)) {
     addresses.push({
       id: Date.now(),
       text: text,
@@ -375,9 +385,10 @@ async function addAddress() {
     input.value = '';
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
-    showStatus('Endereço adicionado!', 'success');
+    showStatus('Endereço adicionado com sucesso!', 'success');
   } else {
     // Se falhar, abre as sugestões como fallback
+    showStatus('Buscando sugestões de endereços...', 'info');
     await searchAndSelectAddress(text);
   }
 }
