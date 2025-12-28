@@ -288,10 +288,10 @@ async function processCEP(text) {
       if (data.bairro) endereco += `, ${data.bairro}`;
       endereco += `, ${data.localidade}, ${data.uf}`;
       showStatus('CEP encontrado!', 'success');
-      let coords = await geocodeBasic(`${endereco}, Brasil`);
+      let coords = await geocodeBrasil(`${endereco}, Brasil`);
       if (!coords) {
         const cityState = `${data.localidade}, ${data.uf}`;
-        coords = await geocodeBasic(cityState);
+        coords = await geocodeBrasil(cityState);
       }
       return { success: true, address: endereco, coords: coords };
     } catch (e) {
@@ -375,7 +375,7 @@ async function addAddress() {
 
   // Caso contrário, busca via Nominatim
   const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
-  const coords = await geocodeBasic(fullQuery);
+  const coords = await geocodeBrasil(fullQuery);
   
   // Verifica se a geocodificação foi bem-sucedida
   if (coords && coords.lat != null && coords.lon != null) {
@@ -482,7 +482,7 @@ async function setDepartureAddress() {
   if (!text) return showStatus('Digite um endereço de partida.', 'warning');
   const cepResult = await processCEP(text);
   if (cepResult?.success) {
-    const coords = cepResult.coords || await geocodeBasic(cepResult.address);
+    const coords = cepResult.coords || await geocodeBrasil(cepResult.address);
     if (!coords) return showStatus('Endereço não encontrado.', 'warning');
     departure = { text: cepResult.address, coords };
     document.getElementById('departure-display').textContent = departure.text;
@@ -657,7 +657,7 @@ function editAddress(id) {
   if (newText === null || newText.trim() === '') return;
   (async () => {
     showStatus('Atualizando...', 'info');
-    const coords = await geocodeBasic(newText.trim());
+    const coords = await geocodeBrasil(newText.trim());
     if (coords) {
       addr.text = newText.trim();
       addr.coords = coords;
@@ -938,7 +938,7 @@ async function processPdf(e) {
     showStatus(`Processando ${matches.length} endereços...`, 'info');
     for (const m of matches) {
       const addr = `${m[1].trim()}, ${m[2].trim()}, CEP: ${m[3]}-${m[4]}`;
-      const coords = await geocodeBasic(addr);
+      const coords = await geocodeBrasil(addr);
       addresses.push({ id: Date.now() + Math.random(), text: addr, coords: coords || null, completed: false });
       await new Promise(r => setTimeout(r, 300));
     }
@@ -956,11 +956,11 @@ async function processPdf(e) {
 async function geocodeAddressFull(address) {
   let full = address + ', Brasil';
   if (userLocation) full = `${address}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-  let coords = await geocodeBasic(full);
+  let coords = await geocodeBrasil(full);
   if (coords) return coords;
   if (userLocation) {
     const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
-    coords = await geocodeBasic(fallback);
+    coords = await geocodeBrasil(fallback);
     if (coords) return coords;
   }
   return null;
