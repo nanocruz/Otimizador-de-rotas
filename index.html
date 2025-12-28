@@ -333,62 +333,90 @@ async function calculateRealDistance(from, to) {
 
 // --- Funções restantes mantidas com pequenas melhorias ---
 async function addAddress() {
-  if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
+  if (!userLocation) {
+    showStatus('⚠️ Defina a localização base primeiro.', 'warning');
+    return;
+  }
+  
   const input = document.getElementById('address-input');
   let text = input.value.trim();
-  if (!text) return;
-
-  showStatus('Buscando endereço...', 'info');
-
-  // Tenta processar como CEP
-  const cepResult = await processCEP(text);
-  if (cepResult?.success) {
-    // Verifica se as coordenadas são válidas
-    if (cepResult.coords && 
-        typeof cepResult.coords.lat === 'number' && 
-        typeof cepResult.coords.lon === 'number' &&
-        !isNaN(cepResult.coords.lat) && 
-        !isNaN(cepResult.coords.lon)) {
-      addresses.push({
-        id: Date.now(),
-        text: cepResult.address,
-        coords: cepResult.coords,
-        completed: false
-      });
-      input.value = '';
-      renderAddressList();
-      document.getElementById('optimize-btn').style.display = 'block';
-      showStatus('Endereço adicionado com sucesso!', 'success');
-      return;
-    } else {
-      showStatus('CEP encontrado mas sem coordenadas válidas. Tentando busca alternativa...', 'warning');
-      // Continua para tentar geocodificação normal
-    }
+  
+  if (!text) {
+    showStatus('⚠️ Digite um endereço.', 'warning');
+    return;
   }
 
-  // Caso contrário, busca via Nominatim
-  const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
-  const coords = await geocodeBasic(fullQuery);
+  console.log('🔍 Adicionando endereço:', text);
+  showStatus('🔍 Buscando endereço...', 'info');
+
+  // Tenta processar como CEP primeiro
+  const cepResult = await processCEP(text);
   
-  // Verifica se a geocodificação foi bem-sucedida com validação rigorosa
-  if (coords && 
-      typeof coords.lat === 'number' && 
-      typeof coords.lon === 'number' &&
-      !isNaN(coords.lat) && 
-      !isNaN(coords.lon)) {
-    addresses.push({
+  if (cepResult?.success && cepResult.coords) {
+    console.log('✅ CEP encontrado:', cepResult);
+    
+    const newAddress = {
       id: Date.now(),
-      text: text,
-      coords: coords,
+      text: cepResult.address,
+      coords: {
+        lat: parseFloat(cepResult.coords.lat),
+        lon: parseFloat(cepResult.coords.lon),
+        display_name: cepResult.coords.display_name
+      },
       completed: false
-    });
+    };
+    
+    // VERIFICAÇÃO FINAL
+    console.log('🔬 Verificando coordenadas:', newAddress.coords);
+    console.log('  - lat:', newAddress.coords.lat, 'tipo:', typeof newAddress.coords.lat, 'isNaN:', isNaN(newAddress.coords.lat));
+    console.log('  - lon:', newAddress.coords.lon, 'tipo:', typeof newAddress.coords.lon, 'isNaN:', isNaN(newAddress.coords.lon));
+    
+    addresses.push(newAddress);
     input.value = '';
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
-    showStatus('Endereço adicionado com sucesso!', 'success');
+    showStatus('✅ Endereço adicionado!', 'success');
+    
+    console.log('📦 Array de endereços atual:', addresses);
+    return;
+  }
+
+  // Se não é CEP, busca por geocodificação normal
+  console.log('🌍 Não é CEP, buscando via geocoding...');
+  const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
+  console.log('🔎 Query completa:', fullQuery);
+  
+  const coords = await geocodeBasic(fullQuery);
+  
+  if (coords) {
+    console.log('✅ Geocoding bem-sucedido:', coords);
+    
+    const newAddress = {
+      id: Date.now(),
+      text: text,
+      coords: {
+        lat: parseFloat(coords.lat),
+        lon: parseFloat(coords.lon),
+        display_name: coords.display_name
+      },
+      completed: false
+    };
+    
+    // VERIFICAÇÃO FINAL
+    console.log('🔬 Verificando coordenadas:', newAddress.coords);
+    console.log('  - lat:', newAddress.coords.lat, 'tipo:', typeof newAddress.coords.lat, 'isNaN:', isNaN(newAddress.coords.lat));
+    console.log('  - lon:', newAddress.coords.lon, 'tipo:', typeof newAddress.coords.lon, 'isNaN:', isNaN(newAddress.coords.lon));
+    
+    addresses.push(newAddress);
+    input.value = '';
+    renderAddressList();
+    document.getElementById('optimize-btn').style.display = 'block';
+    showStatus('✅ Endereço adicionado!', 'success');
+    
+    console.log('📦 Array de endereços atual:', addresses);
   } else {
-    // Se falhar, abre as sugestões como fallback
-    showStatus('Buscando sugestões de endereços...', 'info');
+    // Se falhar, abre sugestões
+    console.log('⚠️ Geocoding falhou, abrindo sugestões...');
     await searchAndSelectAddress(text);
   }
 }
