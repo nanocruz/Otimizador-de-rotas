@@ -253,44 +253,81 @@ async function processCEP(text) {
 }
 
 async function calculateRealDistance(from, to) {
-  const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
-  if (distanceCache.has(key)) return distanceCache.get(key);
+  // 🔒 HARD VALIDATION — prevents null/undefined crashes
+  if (
+    !from || !to ||
+    typeof from.lat !== 'number' ||
+    typeof from.lon !== 'number' ||
+    typeof to.lat !== 'number' ||
+    typeof to.lon !== 'number'
+  ) {
+    return {
+      distance: Number.POSITIVE_INFINITY,
+      duration: Number.POSITIVE_INFINITY
+    };
+  }
 
+  // 🔑 Cache key (order-independent)
+  const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
+  if (distanceCache.has(key)) {
+    return distanceCache.get(key);
+  }
+
+  // 🌐 TRY REAL ROAD DISTANCE (OSRM – free public service)
   try {
-    // Serviço público gratuito de roteamento (OSRM alternativo)
-    const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false&geometries=geojson`;
+    const url =
+      `https://routing.openstreetmap.de/routed-car/route/v1/driving/` +
+      `${from.lon},${from.lat};${to.lon},${to.lat}` +
+      `?overview=false`;
+
     const resp = await fetch(url, {
       headers: {
         'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)'
       }
     });
-    const data = await resp.json();
-    if (data.code === 'Ok' && data.routes?.length > 0) {
-      const result = {
-        distance: data.routes[0].distance,
-        duration: data.routes[0].duration
-      };
-      distanceCache.set(key, result);
-      return result;
+
+    if (resp.ok) {
+      const data = await resp.json();
+
+      if (data?.code === 'Ok' && data.routes?.length > 0) {
+        const route = data.routes[0];
+
+        const result = {
+          distance: route.distance,   // meters
+          duration: route.duration    // seconds
+        };
+
+        distanceCache.set(key, result);
+        return result;
+      }
     }
-  } catch (e) {
-    console.warn('Roteamento falhou, usando linha reta.', e);
+  } catch (err) {
+    console.warn('Road routing failed, using Haversine fallback.', err);
   }
 
-  // Fallback Haversine
-  const R = 6371000;
+  // 🧮 FALLBACK — HAVERSINE (straight-line distance)
+  const R = 6371000; // Earth radius in meters
+
   const φ1 = from.lat * Math.PI / 180;
   const φ2 = to.lat * Math.PI / 180;
   const Δφ = (to.lat - from.lat) * Math.PI / 180;
   const Δλ = (to.lon - from.lon) * Math.PI / 180;
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+
+  const a =
+    Math.sin(Δφ / 2) ** 2 +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) ** 2;
+
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
   const distance = R * c;
+
+  // 🚗 Average urban speed fallback ≈ 50 km/h (13.89 m/s)
   const duration = distance / 13.89;
+
   const result = { distance, duration };
   distanceCache.set(key, result);
+
   return result;
 }
 
@@ -533,52 +570,92 @@ function selectDepartureSuggestion(index) {
 }
 
 async function optimizeRoute() {
-  if (!departure || addresses.length === 0) return showStatus('Defina partida e destinos.', 'warning');
+  if (!departure || !departure.coords || addresses.length === 0) {
+    return showStatus('Define a departure point and valid destinations.', 'warning');
+  }
+
+  // 🔹 Filter only valid destinations
+  const validAddresses = addresses.filter(
+    a =>
+      a.coords &&
+      typeof a.coords.lat === 'number' &&
+      typeof a.coords.lon === 'number'
+  );
+
+  if (validAddresses.length === 0) {
+    return showStatus('No valid destinations with coordinates.', 'warning');
+  }
+
   const btn = document.getElementById('optimize-btn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Otimizando...';
+  btn.innerHTML = '<span class="spinner"></span> Optimizing...';
+
   try {
-    showStatus('Calculando melhor trajeto (malha viária)...', 'info');
-    const remaining = [...addresses];
+    showStatus('Calculating fastest and shortest route...', 'info');
+
+    const remaining = [...validAddresses];
     const route = [];
-    let current = departure;
+
+    let currentCoords = departure.coords;
+
     while (remaining.length > 0) {
-      let nearest = null;
-      let minDist = Infinity;
-      let minIndex = -1;
-      const distances = await Promise.all(remaining.map(dest => calculateRealDistance(current.coords, dest.coords)));
+      let nearestIndex = -1;
+      let minDistance = Infinity;
+
+      const distances = await Promise.all(
+        remaining.map(dest =>
+          calculateRealDistance(currentCoords, dest.coords)
+        )
+      );
+
       for (let i = 0; i < distances.length; i++) {
-        if (distances[i].distance < minDist) {
-          minDist = distances[i].distance;
-          nearest = remaining[i];
-          minIndex = i;
+        if (distances[i].distance < minDistance) {
+          minDistance = distances[i].distance;
+          nearestIndex = i;
         }
       }
-      if (nearest) {
-        route.push(nearest);
-        remaining.splice(minIndex, 1);
-        current = nearest;
-      }
+
+      const next = remaining.splice(nearestIndex, 1)[0];
+      route.push(next);
+      currentCoords = next.coords;
     }
-    let totalDistance = 0, totalDuration = 0, prev = departure;
+
+    // 🔹 Totals
+    let totalDistance = 0;
+    let totalDuration = 0;
+    let prevCoords = departure.coords;
+
     for (const dest of route) {
-      const { distance, duration } = await calculateRealDistance(prev.coords, dest.coords);
+      const { distance, duration } =
+        await calculateRealDistance(prevCoords, dest.coords);
+
       totalDistance += distance;
       totalDuration += duration;
-      prev = dest;
+      prevCoords = dest.coords;
     }
-    optimizedRoute = [{ ...departure, completed: true }, ...route];
+
+    optimizedRoute = [
+      { ...departure, completed: true },
+      ...route.map(r => ({ ...r, completed: false }))
+    ];
+
     activeIndex = 1;
+
     document.getElementById('add-section').style.display = 'none';
     document.getElementById('route-section').style.display = 'block';
+
     await renderRoute();
-    showStatus(`Rota otimizada! ${(totalDistance / 1000).toFixed(1)}km · ~${Math.round(totalDuration / 60)}min`, 'success');
+
+    showStatus(
+      `Route optimized: ${(totalDistance / 1000).toFixed(1)} km · ~${Math.round(totalDuration / 60)} min`,
+      'success'
+    );
   } catch (e) {
-    console.error('Erro na otimização:', e);
-    showStatus('Erro na otimização: ' + (e.message || 'desconhecido'), 'warning');
+    console.error('Optimization error:', e);
+    showStatus('Optimization failed.', 'warning');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = 'Otimizar Rota';
+    btn.innerHTML = 'Optimize Route';
   }
 }
 
