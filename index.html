@@ -279,18 +279,50 @@ async function addAddress() {
   const input = document.getElementById('address-input');
   let text = input.value.trim();
   if (!text) return;
+
+  // Tenta processar como CEP
   const cepResult = await processCEP(text);
-  if (cepResult?.success && cepResult.coords) {
-    addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, completed: false });
+  if (cepResult?.success) {
+    // Verifica se as coordenadas são válidas
+    if (cepResult.coords && cepResult.coords.lat != null && cepResult.coords.lon != null) {
+      addresses.push({
+        id: Date.now(),
+        text: cepResult.address,
+        coords: cepResult.coords,
+        completed: false
+      });
+      input.value = '';
+      renderAddressList();
+      document.getElementById('optimize-btn').style.display = 'block';
+      showStatus('Endereço adicionado!', 'success');
+      return;
+    } else {
+      showStatus('Não foi possível localizar o endereço no mapa.', 'warning');
+      return;
+    }
+  }
+
+  // Caso contrário, busca via Nominatim
+  const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
+  const coords = await geocodeBasic(fullQuery);
+  
+  // Verifica se a geocodificação foi bem-sucedida
+  if (coords && coords.lat != null && coords.lon != null) {
+    addresses.push({
+      id: Date.now(),
+      text: text,
+      coords: coords,
+      completed: false
+    });
     input.value = '';
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
     showStatus('Endereço adicionado!', 'success');
-    return;
+  } else {
+    // Se falhar, abre as sugestões como fallback
+    await searchAndSelectAddress(text);
   }
-  await searchAndSelectAddress(text);
 }
-
 async function searchAndSelectAddress(query) {
   const suggestionsContainer = document.getElementById('suggestions-container');
   suggestionsContainer.style.display = 'block';
