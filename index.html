@@ -478,51 +478,32 @@ if (e.key === 'Enter') setDepartureAddress();
 });
 };
 async function processCEP(text) {
-  // Regex para capturar CEP e número da casa em qualquer ordem
-  // Formatos suportados:
-  // - CEP: 85855-185, 794
-  // - 85855-185, 794
-  // - 85855185, 794
-  // - CEP: 85855-185
-  const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
-
-  if (!cepMatch) return null;
-
-  const cep = cepMatch[1] + cepMatch[2];
-  let numero = cepMatch[3] || '';
-
-  showStatus('Buscando CEP...', 'info');
-
-  try {
-    const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-    const data = await resp.json();
-
-    if (data.erro) throw new Error('CEP não encontrado');
-
-    // Monta o endereço completo para geocodificação
-    let enderecoParaGeocode = `${data.logradouro || ''} ${numero ? `, ${numero}` : ''}`;
-    if (data.bairro) enderecoParaGeocode += `, ${data.bairro}`;
-    enderecoParaGeocode += `, ${data.localidade}, ${data.uf}`;
-
-    // Faz a geocodificação com o endereço completo (logradouro + número)
-    let coords = await geocodeBasic(enderecoParaGeocode);
-    if (!coords) {
-      // Se falhar, tenta com a cidade apenas
-      const cityState = `${data.localidade}, ${data.uf}`;
-      coords = await geocodeBasic(cityState);
-      if (coords) showStatus('Coordenadas aproximadas (cidade)', 'warning');
-    }
-
-    // Monta o texto final para exibição, incluindo o número e o CEP
-    const enderecoExibicao = `${data.logradouro || ''}${numero ? `, ${numero}` : ''}${data.bairro ? `, ${data.bairro}` : ''}, ${data.localidade}, ${data.uf}, CEP: ${cepMatch[1]}-${cepMatch[2]}`;
-
-    showStatus('CEP encontrado!', 'success');
-    return { success: true, address: enderecoExibicao, coords: coords || null };
-
-  } catch (e) {
-    showStatus('CEP inválido: ' + e.message, 'warning');
-    return { success: false, address: text, coords: null };
-  }
+const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
+if (cepMatch) {
+const cep = cepMatch[1] + cepMatch[2];
+const numero = cepMatch[3] || '';
+showStatus('Buscando CEP...', 'info');
+try {
+const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+const data = await resp.json();
+if (data.erro) throw new Error('CEP não encontrado');
+let endereco = data.logradouro || '';
+if (numero) endereco += `, ${numero}`;
+if (data.bairro) endereco += `, ${data.bairro}`;
+endereco += `, ${data.localidade}, ${data.uf}`;
+showStatus('CEP encontrado!', 'success');
+let coords = await geocodeBasic(`${endereco}, Brasil`);
+if (!coords) {
+const cityState = `${data.localidade}, ${data.uf}`;
+coords = await geocodeBasic(cityState);
+if (coords) showStatus('Coordenadas aproximadas (cidade)', 'warning');
+}
+return { success: true, address: endereco, coords: coords || null };
+} catch (e) {
+showStatus('CEP inválido: ' + e.message, 'warning');
+return { success: false, address: text, coords: null };
+}
+}
 return null;
 }
 async function geocodeBasic(address) {
@@ -605,13 +586,12 @@ function selectSuggestion(index) {
 const result = window.pendingSuggestions?.[index];
 if (!result) return;
 const addr = result.address || {};
-let displayText = result.display_name;
-if (addr.road || addr.house_number) {
-displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
+let displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
+if (addr.neighbourhood) displayText += `, ${addr.neighbourhood}`;
 if (addr.suburb) displayText += `, ${addr.suburb}`;
 if (addr.city) displayText += `, ${addr.city}`;
-if (addr.state) displayText += ` - ${addr.state}`;
-}
+if (addr.state) displayText += `, ${addr.state}`;
+if (!displayText) displayText = result.display_name;
 addresses.push({
 id: Date.now(),
 text: displayText,
@@ -660,30 +640,21 @@ document.getElementById('base-location-display').textContent = 'Falha ao definir
 }
 async function setDepartureAddress() {
   const input = document.getElementById('departure-input');
-  const text = input.value.trim();
+  let text = input.value.trim();
   if (!text) return showStatus('Digite um endereço de partida.', 'warning');
-
-  // Tenta processar como CEP primeiro
   const cepResult = await processCEP(text);
-
-  if (cepResult?.success && cepResult.coords) {
-    // Usa o endereço completo retornado pela API ViaCEP + número
-    departure = { text: cepResult.address, coords: cepResult.coords };
-    document.getElementById('departure-display').textContent = cepResult.coords.display_name;
-    showStatus('Ponto de partida definido via CEP!', 'success');
+  if (cepResult?.success) {
+    const coords = cepResult.coords || await geocodeAddressFull(cepResult.address);
+    if (!coords) {
+      showStatus('Endereço não encontrado.', 'warning');
+      return;
+    }
+    departure = { text: cepResult.address, coords };
+    document.getElementById('departure-display').textContent = departure.coords.display_name || departure.text;
+    input.value = '';
+    showStatus('Ponto de partida definido!', 'success');
     return;
   }
-
-  // Se não for CEP, trata como endereço normal
-  const coords = await geocodeAddressFull(text);
-  if (coords) {
-    departure = { text: text, coords };
-    document.getElementById('departure-display').textContent = coords.display_name;
-    showStatus('Ponto de partida definido!', 'success');
-  } else {
-    showStatus('Endereço de partida não encontrado.', 'warning');
-  }
-
   await searchAndSelectDeparture(text);
 }
 async function searchAndSelectDeparture(query) {
@@ -730,13 +701,12 @@ function selectDepartureSuggestion(index) {
   const result = window.pendingDepartureSuggestions?.[index];
   if (!result) return;
   const addr = result.address || {};
-  let displayText = result.display_name;
-  if (addr.road || addr.house_number) {
-    displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
-    if (addr.suburb) displayText += `, ${addr.suburb}`;
-    if (addr.city) displayText += `, ${addr.city}`;
-    if (addr.state) displayText += ` - ${addr.state}`;
-  }
+  let displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
+  if (addr.neighbourhood) displayText += `, ${addr.neighbourhood}`;
+  if (addr.suburb) displayText += `, ${addr.suburb}`;
+  if (addr.city) displayText += `, ${addr.city}`;
+  if (addr.state) displayText += `, ${addr.state}`;
+  if (!displayText) displayText = result.display_name;
   departure = {
     text: displayText,
     coords: {
@@ -746,7 +716,7 @@ function selectDepartureSuggestion(index) {
     }
   };
   document.getElementById('departure-input').value = '';
-  document.getElementById('departure-display').textContent = departure.coords.display_name || departure.text;
+  document.getElementById('departure-display').textContent = departure.text;
   document.getElementById('departure-suggestions').style.display = 'none';
   showStatus('Ponto de partida adicionado!', 'success');
 }
@@ -758,24 +728,39 @@ async (pos) => {
 const { latitude, longitude } = pos.coords;
 try {
 const data = await (await fetch(
-`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=pt-BR`,
+`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=pt-BR`,
 { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
 )).json();
-const name = data.display_name || `Lat: ${latitude}, Lng: ${longitude}`;
-departure = { text: 'Minha localização atual', coords: { lat: latitude, lon: longitude, display_name: name } };
-document.getElementById('departure-display').textContent = name;
+let displayText = '';
+if (data.address) {
+  const addr = data.address;
+  displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
+  if (addr.neighbourhood) displayText += `, ${addr.neighbourhood}`;
+  if (addr.suburb) displayText += `, ${addr.suburb}`;
+  if (addr.city) displayText += `, ${addr.city}`;
+  if (addr.state) displayText += `, ${addr.state}`;
+}
+if (!displayText) displayText = data.display_name || `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
+departure = { 
+  text: displayText, 
+  coords: { lat: latitude, lon: longitude, display_name: data.display_name || displayText } 
+};
+document.getElementById('departure-display').textContent = displayText;
 showStatus('Partida definida com sucesso!', 'success');
+if (!data.address?.road) {
+  showStatus('Localização aproximada. Para maior precisão, use endereço completo ou CEP.', 'warning');
+}
 } catch (e) {
 departure = {
 text: 'Minha localização atual',
 coords: { lat: latitude, lon: longitude, display_name: `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})` }
 };
 document.getElementById('departure-display').textContent = departure.coords.display_name;
-showStatus('Localização usada sem nome.', 'info');
+showStatus('Localização usada sem nome detalhado.', 'warning');
 }
 },
 (err) => showStatus('Erro na localização: ' + err.message, 'warning'),
-{ timeout: 10000 }
+{ enableHighAccuracy: true, timeout: 10000 }
 );
 }
 async function geocodeAddressFull(address) {
