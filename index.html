@@ -11,352 +11,66 @@
 <script src="https://serratus.github.io/quaggaJS/dist/quagga.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/dist/tesseract.min.js"></script>
 <style>
-* {
-margin: 0;
-padding: 0;
-box-sizing: border-box;
-}
-body {
-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-background: #f5f5f5;
-color: #333;
-min-height: 100vh;
-padding: 20px;
-padding-bottom: 120px;
-display: flex;
-flex-direction: column;
-align-items: center;
-}
-.container {
-max-width: 100%;
-width: 100%;
-margin: 0 auto;
-padding: 0 10px;
-}
-.header {
-text-align: center;
-color: white;
-margin-bottom: 20px;
-background: #0056b3;
-padding: 15px 20px;
-border-radius: 10px 10px 0 0;
-}
-.header h1 {
-font-size: 28px;
-margin-bottom: 5px;
-display: flex;
-align-items: center;
-justify-content: center;
-gap: 10px;
-}
-.card {
-background: white;
-border: 1px solid #ddd;
-border-radius: 10px;
-padding: 20px;
-box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-margin-bottom: 20px;
-}
-.status-bar {
-padding: 12px;
-border-radius: 8px;
-margin-bottom: 15px;
-font-size: 14px;
-}
-.status-success {
-background: #d4edda;
-color: #155724;
-border: 1px solid #c3e6cb;
-}
-.status-info {
-background: #d1ecf1;
-color: #0c5460;
-border: 1px solid #bee5eb;
-}
-.status-warning {
-background: #fff3cd;
-color: #856404;
-border: 1px solid #ffeaa7;
-}
-.tip-box {
-background: #e3f2fd;
-border-left: 4px solid #0056b3;
-padding: 15px;
-border-radius: 8px;
-margin-bottom: 20px;
-}
-.tip-box strong {
-display: block;
-margin-bottom: 5px;
-color: #0056b3;
-}
-.tip-box small {
-display: block;
-margin-top: 8px;
-font-size: 12px;
-color: #555;
-}
-.input-group {
-display: flex;
-gap: 10px;
-margin-bottom: 15px;
-}
-input[type="text"] {
-flex: 1;
-padding: 15px;
-border: 1px solid #ccc;
-border-radius: 8px;
-font-size: 16px;
-}
-input[type="text"]:focus {
-outline: none;
-border-color: #0056b3;
-box-shadow: 0 0 0 2px rgba(0, 86, 179, 0.1);
-}
-.btn {
-padding: 15px 25px;
-border: none;
-border-radius: 8px;
-font-size: 16px;
-font-weight: 600;
-cursor: pointer;
-transition: all 0.2s;
-display: flex;
-align-items: center;
-justify-content: center;
-gap: 8px;
-}
-.btn-primary {
-background: #0056b3;
-color: white;
-}
-.btn-primary:hover {
-background: #004494;
-}
-.btn-voice {
-background: #e9ecef;
-color: #333;
-flex: 1;
-}
-.btn-voice.listening {
-background: #ef5350;
-color: white;
-animation: pulse 1.5s infinite;
-}
-@keyframes pulse {
-0%, 100% { opacity: 1; }
-50% { opacity: 0.7; }
-}
-.btn-optimize {
-position: fixed;
-bottom: 20px;
-left: 20px;
-right: 20px;
-width: auto;
-background: #0056b3;
-color: white;
-font-size: 18px;
-padding: 18px;
-box-shadow: 0 4px 12px rgba(0, 86, 179, 0.2);
-z-index: 1000;
-}
-.btn-optimize:disabled {
-opacity: 0.6;
-cursor: not-allowed;
-}
-.spinner {
-border: 2px solid rgba(255, 255, 255, 0.3);
-border-top: 2px solid white;
-border-radius: 50%;
-width: 18px;
-height: 18px;
-animation: spin 1s linear infinite;
-display: inline-block;
-}
-@keyframes spin {
-to { transform: rotate(360deg); }
-}
-.btn-small {
-padding: 10px 15px;
-font-size: 14px;
-}
-.buttons-grid {
-display: grid;
-grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-gap: 10px;
-margin-bottom: 20px;
-}
-.address-list {
-margin-bottom: 20px;
-}
-.address-item {
-display: flex;
-align-items: center;
-gap: 10px;
-padding: 15px;
-background: #f8f9fa;
-border: 1px solid #eee;
-border-radius: 8px;
-margin-bottom: 10px;
-cursor: default;
-}
-.address-number {
-background: #0056b3;
-color: white;
-width: 30px;
-height: 30px;
-border-radius: 50%;
-display: flex;
-align-items: center;
-justify-content: center;
-font-weight: bold;
-flex-shrink: 0;
-}
-.address-text {
-flex: 1;
-font-size: 14px;
-}
-.btn-delete {
-background: #ff5252;
-color: white;
-width: 35px;
-height: 35px;
-border-radius: 6px;
-border: none;
-cursor: pointer;
-flex-shrink: 0;
-}
-.route-item {
-padding: 20px;
-border-radius: 8px;
-margin-bottom: 15px;
-border: 1px solid #ddd;
-}
-.route-item.active {
-background: #cce5ff;
-border-color: #0056b3;
-box-shadow: 0 2px 8px rgba(0, 86, 179, 0.1);
-}
-.route-item.completed {
-background: #e8f5e9;
-border-color: #4caf50;
-}
-.route-header {
-display: flex;
-align-items: flex-start;
-gap: 10px;
-margin-bottom: 15px;
-}
-.route-number {
-width: 35px;
-height: 35px;
-border-radius: 50%;
-display: flex;
-align-items: center;
-justify-content: center;
-font-weight: bold;
-flex-shrink: 0;
-}
-.route-number.active {
-background: #0056b3;
-color: white;
-}
-.route-number.completed {
-background: #4caf50;
-color: white;
-}
-.route-text {
-flex: 1;
-}
-.route-text strong {
-display: block;
-margin-bottom: 5px;
-font-size: 16px;
-}
-.route-text small {
-color: #666;
-font-size: 13px;
-}
-.route-buttons {
-display: grid;
-grid-template-columns: 1fr 1fr auto;
-gap: 8px;
-}
-.btn-maps {
-background: #007bff;
-color: white;
-}
-.btn-waze {
-background: #00d9ff;
-color: white;
-}
-.btn-complete {
-background: #4caf50;
-color: white;
-width: 45px;
-}
-.progress-bar {
-background: #e8eaf6;
-padding: 15px;
-border-radius: 8px;
-text-align: center;
-margin-top: 20px;
-}
-.progress-bar strong {
-color: #0056b3;
-font-size: 18px;
-}
-#camera-container {
-margin-bottom: 20px;
-}
-#camera-video {
-width: 100%;
-border-radius: 8px;
-margin-bottom: 10px;
-}
-.camera-buttons {
-display: grid;
-grid-template-columns: 1fr 1fr;
-gap: 10px;
-}
-.btn-capture {
-background: #4caf50;
-color: white;
-}
-.btn-cancel {
-background: #f44336;
-color: white;
-}
-.header-actions {
-display: flex;
-justify-content: space-between;
-align-items: center;
-margin-bottom: 20px;
-}
-.btn-reset {
-background: #f44336;
-color: white;
-}
-.base-location-section {
-background: #fff8e1;
-border: 1px dashed #ffc107;
-border-radius: 8px;
-padding: 15px;
-margin-bottom: 20px;
-}
-.base-location-display {
-font-size: 14px;
-color: #555;
-text-align: center;
-margin-top: 10px;
-}
-.suggestion-item {
-background: #f0f8ff !important;
-cursor: pointer;
-}
-.suggestion-item:hover {
-background: #e3f2fd !important;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; background: #f5f5f5; color: #333; min-height: 100vh; padding: 20px; padding-bottom: 120px; display: flex; flex-direction: column; align-items: center; }
+.container { max-width: 100%; width: 100%; margin: 0 auto; padding: 0 10px; }
+.header { text-align: center; color: white; margin-bottom: 20px; background: #0056b3; padding: 15px 20px; border-radius: 10px 10px 0 0; }
+.header h1 { font-size: 28px; margin-bottom: 5px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.card { background: white; border: 1px solid #ddd; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); margin-bottom: 20px; }
+.status-bar { padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
+.status-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.status-info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+.status-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+.tip-box { background: #e3f2fd; border-left: 4px solid #0056b3; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+.tip-box strong { display: block; margin-bottom: 5px; color: #0056b3; }
+.tip-box small { display: block; margin-top: 8px; font-size: 12px; color: #555; }
+.input-group { display: flex; gap: 10px; margin-bottom: 15px; }
+input[type="text"] { flex: 1; padding: 15px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; }
+input[type="text"]:focus { outline: none; border-color: #0056b3; box-shadow: 0 0 0 2px rgba(0, 86, 179, 0.1); }
+.btn { padding: 15px 25px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn-primary { background: #0056b3; color: white; }
+.btn-primary:hover { background: #004494; }
+.btn-voice { background: #e9ecef; color: #333; flex: 1; }
+.btn-voice.listening { background: #ef5350; color: white; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+.btn-optimize { position: fixed; bottom: 20px; left: 20px; right: 20px; width: auto; background: #0056b3; color: white; font-size: 18px; padding: 18px; box-shadow: 0 4px 12px rgba(0, 86, 179, 0.2); z-index: 1000; }
+.btn-optimize:disabled { opacity: 0.6; cursor: not-allowed; }
+.spinner { border: 2px solid rgba(255, 255, 255, 0.3); border-top: 2px solid white; border-radius: 50%; width: 18px; height: 18px; animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.btn-small { padding: 10px 15px; font-size: 14px; }
+.buttons-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px; }
+.address-list { margin-bottom: 20px; }
+.address-item { display: flex; align-items: center; gap: 10px; padding: 15px; background: #f8f9fa; border: 1px solid #eee; border-radius: 8px; margin-bottom: 10px; cursor: default; }
+.address-number { background: #0056b3; color: white; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; }
+.address-text { flex: 1; font-size: 14px; }
+.btn-delete { background: #ff5252; color: white; width: 35px; height: 35px; border-radius: 6px; border: none; cursor: pointer; flex-shrink: 0; }
+.route-item { padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #ddd; }
+.route-item.active { background: #cce5ff; border-color: #0056b3; box-shadow: 0 2px 8px rgba(0, 86, 179, 0.1); }
+.route-item.completed { background: #e8f5e9; border-color: #4caf50; }
+.route-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 15px; }
+.route-number { width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0; }
+.route-number.active { background: #0056b3; color: white; }
+.route-number.completed { background: #4caf50; color: white; }
+.route-text { flex: 1; }
+.route-text strong { display: block; margin-bottom: 5px; font-size: 16px; }
+.route-text small { color: #666; font-size: 13px; }
+.route-buttons { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+.btn-maps { background: #007bff; color: white; }
+.btn-waze { background: #00d9ff; color: white; }
+.btn-complete { background: #4caf50; color: white; width: 45px; }
+.progress-bar { background: #e8eaf6; padding: 15px; border-radius: 8px; text-align: center; margin-top: 20px; }
+.progress-bar strong { color: #0056b3; font-size: 18px; }
+#camera-container { margin-bottom: 20px; }
+#camera-video { width: 100%; border-radius: 8px; margin-bottom: 10px; }
+.camera-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn-capture { background: #4caf50; color: white; }
+.btn-cancel { background: #f44336; color: white; }
+.header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.btn-reset { background: #f44336; color: white; }
+.base-location-section { background: #fff8e1; border: 1px dashed #ffc107; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+.base-location-display { font-size: 14px; color: #555; text-align: center; margin-top: 10px; }
+.suggestion-item { background: #f0f8ff !important; cursor: pointer; }
+.suggestion-item:hover { background: #e3f2fd !important; }
 </style>
 </head>
 <body>
@@ -451,28 +165,15 @@ let scannerType = null;
 let isPhotoMode = false;
 let distanceCache = new Map();
 function getCacheKey(lat1, lon1, lat2, lon2) {
-if (lat1 < lat2 || (lat1 === lat2 && lon1 < lon2)) {
-return `${lat1},${lon1}|${lat2},${lon2}`;
-} else {
-return `${lat2},${lon2}|${lat1},${lon1}`;
-}
+const p1 = `${lat1.toFixed(6)},${lon1.toFixed(6)}`;
+const p2 = `${lat2.toFixed(6)},${lon2.toFixed(6)}`;
+return p1 < p2 ? `${p1}|${p2}` : `${p2}|${p1}`;
 }
 window.onload = () => {
-document.getElementById('address-input').addEventListener('keypress', (e) => {
-if (e.key === 'Enter') addAddress();
-});
-document.getElementById('base-location-input').addEventListener('keypress', (e) => {
-if (e.key === 'Enter') {
-e.preventDefault();
-setBaseLocation();
-}
-});
-document.getElementById('departure-input').addEventListener('keypress', (e) => {
-if (e.key === 'Enter') setDepartureAddress();
-});
-if (window.pdfjsLib) {
-window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-}
+document.getElementById('address-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addAddress(); });
+document.getElementById('base-location-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); setBaseLocation(); } });
+document.getElementById('departure-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') setDepartureAddress(); });
+if (window.pdfjsLib) { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
 };
 async function processCEP(text) {
 const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
@@ -493,7 +194,6 @@ let coords = await geocodeBasic(`${endereco}, Brasil`);
 if (!coords) {
 const cityState = `${data.localidade}, ${data.uf}`;
 coords = await geocodeBasic(cityState);
-if (coords) showStatus('Coordenadas aproximadas (cidade)', 'warning');
 }
 return { success: true, address: endereco, coords: coords };
 } catch (e) {
@@ -505,21 +205,12 @@ return null;
 }
 async function geocodeBasic(address) {
 try {
-const resp = await fetch(
-`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1&accept-language=pt-BR`,
-{ headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-);
+const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1&accept-language=pt-BR`, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } });
 const data = await resp.json();
 if (data?.length > 0) {
-return {
-lat: parseFloat(data[0].lat),
-lon: parseFloat(data[0].lon),
-display_name: data[0].display_name
-};
+return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), display_name: data[0].display_name };
 }
-} catch (e) {
-console.error('Erro na geocodificação:', e);
-}
+} catch (e) { console.error('Erro na geocodificação:', e); }
 return null;
 }
 async function addAddress() {
@@ -533,7 +224,7 @@ addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coor
 input.value = '';
 renderAddressList();
 document.getElementById('optimize-btn').style.display = 'block';
-showStatus('Endereço adicionado via CEP!', 'success');
+showStatus('Endereço adicionado!', 'success');
 return;
 }
 await searchAndSelectAddress(text);
@@ -545,10 +236,7 @@ suggestionsContainer.innerHTML = '<div class="status-bar status-info">Buscando e
 try {
 const cityState = `${userLocation.city}, ${userLocation.state}, Brasil`;
 const fullQuery = `${query}, ${cityState}`;
-const resp = await fetch(
-`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`,
-{ headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-);
+const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } });
 const results = await resp.json();
 if (!results || results.length === 0) {
 suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Nenhum endereço encontrado. Tente com CEP.</div>';
@@ -564,18 +252,12 @@ const neighborhood = addr.suburb || addr.neighbourhood || addr.city_district || 
 const postcode = addr.postcode || '';
 const city = addr.city || userLocation.city;
 const display = `${street}${number ? ', ' + number : ''} – ${neighborhood}${postcode ? ' (CEP: ' + postcode + ')' : ''}`;
-html += `
-<div class="address-item suggestion-item" onclick="selectSuggestion(${i})">
-<div style="font-size:14px;">${display}</div>
-<small style="color:#666;">${city}, ${userLocation.state}</small>
-</div>
-`;
+html += `<div class="address-item suggestion-item" onclick="selectSuggestion(${i})"><div style="font-size:14px;">${display}</div><small style="color:#666;">${city}, ${userLocation.state}</small></div>`;
 });
 suggestionsContainer.innerHTML = html;
 window.pendingSuggestions = results;
 } catch (e) {
-console.error('Erro ao buscar sugestões:', e);
-suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca. Tente novamente.</div>';
+suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>';
 setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
 }
 }
@@ -589,16 +271,7 @@ if (addr.suburb) displayText += `, ${addr.suburb}`;
 if (addr.city) displayText += `, ${addr.city}`;
 if (addr.state) displayText += `, ${addr.state}`;
 if (!displayText) displayText = result.display_name;
-addresses.push({
-id: Date.now(),
-text: displayText,
-coords: {
-lat: parseFloat(result.lat),
-lon: parseFloat(result.lon),
-display_name: result.display_name
-},
-completed: false
-});
+addresses.push({ id: Date.now(), text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon), display_name: result.display_name }, completed: false });
 document.getElementById('address-input').value = '';
 renderAddressList();
 document.getElementById('optimize-btn').style.display = 'block';
@@ -614,11 +287,8 @@ geocodeBaseLocation(text);
 async function geocodeBaseLocation(locationText) {
 showStatus('Verificando localização base...', 'info');
 try {
-const data = await (await fetch(
-`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText + ', Brasil')}&limit=1&addressdetails=1&accept-language=pt-BR`,
-{ headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-)).json();
-if (!data?.length) throw new Error('Nenhum resultado encontrado. Use “Cidade, Estado”.');
+const data = await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText + ', Brasil')}&limit=1&addressdetails=1&accept-language=pt-BR`, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } })).json();
+if (!data?.length) throw new Error('Nenhum resultado encontrado.');
 const addr = data[0].address || {};
 const city = addr.city || addr.town || addr.municipality || addr.village || '';
 const state = addr.state || '';
@@ -627,12 +297,10 @@ userLocation = { city, state };
 document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
 document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 ou CEP (em ${city})`;
 document.getElementById('departure-section').style.display = 'block';
-showStatus(`Localização base definida: ${city}${state ? ', ' + state : ''}`, 'success');
+showStatus(`Localização base definida!`, 'success');
 } catch (error) {
-console.error('Erro na localização base:', error);
 showStatus(`${error.message}`, 'warning');
 userLocation = null;
-document.getElementById('base-location-display').textContent = 'Falha ao definir localização base.';
 }
 }
 async function setDepartureAddress() {
@@ -642,10 +310,7 @@ if (!text) return showStatus('Digite um endereço de partida.', 'warning');
 const cepResult = await processCEP(text);
 if (cepResult?.success) {
 const coords = cepResult.coords || await geocodeAddressFull(cepResult.address);
-if (!coords) {
-showStatus('Endereço não encontrado.', 'warning');
-return;
-}
+if (!coords) return showStatus('Endereço não encontrado.', 'warning');
 departure = { text: cepResult.address, coords };
 document.getElementById('departure-display').textContent = departure.text;
 input.value = '';
@@ -661,13 +326,10 @@ suggestionsContainer.innerHTML = '<div class="status-bar status-info">Buscando e
 try {
 const cityState = `${userLocation.city}, ${userLocation.state}, Brasil`;
 const fullQuery = `${query}, ${cityState}`;
-const resp = await fetch(
-`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`,
-{ headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-);
+const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } });
 const results = await resp.json();
 if (!results || results.length === 0) {
-suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Nenhum endereço encontrado. Tente com CEP.</div>';
+suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Nenhum endereço encontrado.</div>';
 setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
 return;
 }
@@ -680,17 +342,12 @@ const neighborhood = addr.suburb || addr.neighbourhood || addr.city_district || 
 const postcode = addr.postcode || '';
 const city = addr.city || userLocation.city;
 const display = `${street}${number ? ', ' + number : ''} – ${neighborhood}${postcode ? ' (CEP: ' + postcode + ')' : ''}`;
-html += `
-<div class="address-item suggestion-item" onclick="selectDepartureSuggestion(${i})">
-<div style="font-size:14px;">${display}</div>
-<small style="color:#666;">${city}, ${userLocation.state}</small>
-</div>`;
+html += `<div class="address-item suggestion-item" onclick="selectDepartureSuggestion(${i})"><div style="font-size:14px;">${display}</div><small style="color:#666;">${city}, ${userLocation.state}</small></div>`;
 });
 suggestionsContainer.innerHTML = html;
 window.pendingDepartureSuggestions = results;
 } catch (e) {
-console.error('Erro ao buscar sugestões:', e);
-suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca. Tente novamente.</div>';
+suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>';
 setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
 }
 }
@@ -704,14 +361,7 @@ if (addr.suburb) displayText += `, ${addr.suburb}`;
 if (addr.city) displayText += `, ${addr.city}`;
 if (addr.state) displayText += `, ${addr.state}`;
 if (!displayText) displayText = result.display_name;
-departure = {
-text: displayText,
-coords: {
-lat: parseFloat(result.lat),
-lon: parseFloat(result.lon),
-display_name: result.display_name
-}
-};
+departure = { text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon), display_name: result.display_name } };
 document.getElementById('departure-input').value = '';
 document.getElementById('departure-display').textContent = departure.text;
 document.getElementById('departure-suggestions').style.display = 'none';
@@ -720,14 +370,10 @@ showStatus('Ponto de partida adicionado!', 'success');
 function setDepartureCurrentLocation() {
 if (!navigator.geolocation) return showStatus('Geolocalização não suportada.', 'warning');
 showStatus('Obtendo sua localização...', 'info');
-navigator.geolocation.getCurrentPosition(
-async (pos) => {
+navigator.geolocation.getCurrentPosition(async (pos) => {
 const { latitude, longitude } = pos.coords;
 try {
-const data = await (await fetch(
-`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=pt-BR`,
-{ headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } }
-)).json();
+const data = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=pt-BR`, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0' } })).json();
 let displayText = '';
 if (data.address) {
 const addr = data.address;
@@ -738,30 +384,19 @@ if (addr.city) displayText += `, ${addr.city}`;
 if (addr.state) displayText += `, ${addr.state}`;
 }
 if (!displayText) displayText = data.display_name || `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
-departure = { 
-text: displayText, 
-coords: { lat: latitude, lon: longitude, display_name: data.display_name || displayText } 
-};
+departure = { text: displayText, coords: { lat: latitude, lon: longitude, display_name: data.display_name || displayText } };
 document.getElementById('departure-display').textContent = displayText;
-showStatus('Partida definida com sucesso!', 'success');
+showStatus('Partida definida!', 'success');
 } catch (e) {
-departure = {
-text: 'Minha localização atual',
-coords: { lat: latitude, lon: longitude, display_name: `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})` }
-};
+departure = { text: 'Minha localização atual', coords: { lat: latitude, lon: longitude, display_name: `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})` } };
 document.getElementById('departure-display').textContent = departure.coords.display_name;
-showStatus('Localização usada sem nome detalhado.', 'warning');
+showStatus('Localização usada!', 'warning');
 }
-},
-(err) => showStatus('Erro na localização: ' + err.message, 'warning'),
-{ enableHighAccuracy: true, timeout: 10000 }
-);
+}, (err) => showStatus('Erro na localização: ' + err.message, 'warning'), { enableHighAccuracy: true, timeout: 10000 });
 }
 async function geocodeAddressFull(address) {
 let full = address + ', Brasil';
-if (userLocation) {
-full = `${address}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-}
+if (userLocation) full = `${address}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
 let coords = await geocodeBasic(full);
 if (coords) return coords;
 if (userLocation) {
@@ -788,17 +423,13 @@ const result = { distance: data.routes[0].distance, duration: data.routes[0].dur
 distanceCache.set(key, result);
 return result;
 }
-} catch (e) {
-console.warn('OSRM falhou, usando distância em linha reta:', e);
-}
+} catch (e) { console.warn('OSRM falhou, usando linha reta.'); }
 const R = 6371000;
 const φ1 = from.lat * Math.PI / 180;
 const φ2 = to.lat * Math.PI / 180;
 const Δφ = (to.lat - from.lat) * Math.PI / 180;
 const Δλ = (to.lon - from.lon) * Math.PI / 180;
-const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-Math.cos(φ1) * Math.cos(φ2) *
-Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
 const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 const distance = R * c;
 const duration = distance / 13.89;
@@ -806,18 +437,24 @@ const result = { distance, duration };
 distanceCache.set(key, result);
 return result;
 }
-async function optimizeRouteNearestNeighbor(start, destinations) {
+async function optimizeRoute() {
+if (!departure || addresses.length === 0) return showStatus('Defina partida e destinos.', 'warning');
+const btn = document.getElementById('optimize-btn');
+btn.disabled = true;
+btn.innerHTML = '<span class="spinner"></span> Otimizando...';
+try {
+showStatus('Calculando melhor trajeto (malha viária)...', 'info');
+const remaining = addresses.map(a => ({ ...a }));
 const route = [];
-const remaining = [...destinations];
-let current = start;
+let current = departure;
 while (remaining.length > 0) {
 let nearest = null;
 let minDist = Infinity;
 let minIndex = -1;
-for (let i = 0; i < remaining.length; i++) {
-const { distance } = await calculateRealDistance(current.coords, remaining[i].coords);
-if (distance < minDist) {
-minDist = distance;
+const distances = await Promise.all(remaining.map(dest => calculateRealDistance(current.coords, dest.coords)));
+for (let i = 0; i < distances.length; i++) {
+if (distances[i].distance < minDist) {
+minDist = distances[i].distance;
 nearest = remaining[i];
 minIndex = i;
 }
@@ -828,84 +465,26 @@ remaining.splice(minIndex, 1);
 current = nearest;
 }
 }
-return route;
-}
-async function twoOptImprovement(route, start) {
-let improved = true;
-let currentRoute = [...route];
-while (improved) {
-improved = false;
-for (let i = 0; i < currentRoute.length - 2; i++) {
-for (let j = i + 2; j < currentRoute.length - 1; j++) {
-const prev = i === 0 ? start : currentRoute[i - 1];
-const [d1, d2, d3, d4] = await Promise.all([
-calculateRealDistance(prev.coords, currentRoute[i].coords),
-calculateRealDistance(currentRoute[j].coords, currentRoute[j + 1].coords),
-calculateRealDistance(prev.coords, currentRoute[j].coords),
-calculateRealDistance(currentRoute[i].coords, currentRoute[j + 1].coords)
-]);
-if (d3.distance + d4.distance < d1.distance + d2.distance) {
-const segment = currentRoute.slice(i, j + 1).reverse();
-currentRoute = [...currentRoute.slice(0, i), ...segment, ...currentRoute.slice(j + 1)];
-improved = true;
-}
-}
-}
-}
-return currentRoute;
-}
-async function optimizeRoute() {
-if (!departure || addresses.length === 0) return showStatus('Defina partida e destinos.', 'warning');
-const btn = document.getElementById('optimize-btn');
-btn.disabled = true;
-btn.innerHTML = '<span class="spinner"></span> Otimizando...';
-try {
-const destinos = addresses.map(a => ({ ...a }));
-let optimized = await optimizeRouteNearestNeighbor(departure, destinos);
-if (optimized.length > 3) {
-showStatus('Refinando rota...', 'info');
-optimized = await twoOptImprovement(optimized, departure);
-}
 let totalDistance = 0, totalDuration = 0, prev = departure;
-for (const dest of optimized) {
+for (const dest of route) {
 const { distance, duration } = await calculateRealDistance(prev.coords, dest.coords);
 totalDistance += distance;
 totalDuration += duration;
 prev = dest;
 }
-optimized.forEach(d => d.completed = false);
-optimizedRoute = [{ ...departure, completed: true }, ...optimized];
+optimizedRoute = [{ ...departure, completed: true }, ...route];
 activeIndex = 1;
 document.getElementById('add-section').style.display = 'none';
 document.getElementById('route-section').style.display = 'block';
 await renderRoute();
-const distKm = (totalDistance / 1000).toFixed(1);
-const durMin = Math.round(totalDuration / 60);
-showStatus(`Rota otimizada! ${distKm}km · ~${durMin}min`, 'success');
-} catch (e) {
-console.error('Erro na otimização:', e);
-showStatus('Erro: ' + e.message, 'warning');
-} finally {
-btn.disabled = false;
-btn.innerHTML = 'Otimizar Rota';
-}
+showStatus(`Rota otimizada! ${(totalDistance / 1000).toFixed(1)}km · ~${Math.round(totalDuration / 60)}min`, 'success');
+} catch (e) { showStatus('Erro na otimização: ' + e.message, 'warning'); } finally { btn.disabled = false; btn.innerHTML = 'Otimizar Rota'; }
 }
 function renderAddressList() {
 const list = document.getElementById('address-list');
-if (addresses.length === 0) {
-list.innerHTML = '';
-return;
-}
+if (addresses.length === 0) { list.innerHTML = ''; return; }
 let html = '';
-addresses.forEach((addr, i) => {
-html += `
-<div class="address-item">
-<div class="address-number">${i + 1}</div>
-<div class="address-text">${addr.text}</div>
-<button class="btn-delete" onclick="editAddress(${addr.id})" title="Editar">✏️</button>
-<button class="btn-delete" onclick="deleteAddress(${addr.id})" title="Excluir">×</button>
-</div>`;
-});
+addresses.forEach((addr, i) => { html += `<div class="address-item"><div class="address-number">${i + 1}</div><div class="address-text">${addr.text}</div><button class="btn-delete" onclick="editAddress(${addr.id})" title="Editar">✏️</button><button class="btn-delete" onclick="deleteAddress(${addr.id})" title="Excluir">×</button></div>`; });
 list.innerHTML = html;
 }
 function editAddress(id) {
@@ -914,16 +493,10 @@ if (!addr) return;
 const newText = prompt('Editar endereço:', addr.text);
 if (newText === null || newText.trim() === '') return;
 (async () => {
-showStatus('Atualizando endereço...', 'info');
+showStatus('Atualizando...', 'info');
 const coords = await geocodeAddressFull(newText.trim());
-if (coords) {
-addr.text = newText.trim();
-addr.coords = coords;
-renderAddressList();
-showStatus('Endereço atualizado!', 'success');
-} else {
-showStatus('Não foi possível localizar o novo endereço.', 'warning');
-}
+if (coords) { addr.text = newText.trim(); addr.coords = coords; renderAddressList(); showStatus('Atualizado!', 'success'); }
+else { showStatus('Não localizado.', 'warning'); }
 })();
 }
 async function renderRoute() {
@@ -935,31 +508,10 @@ const ativo = i === activeIndex && !a.completed;
 const concluido = a.completed;
 let distInfo = '';
 if (i > 0) {
-try {
 const { distance, duration } = await calculateRealDistance(optimizedRoute[i - 1].coords, a.coords);
 distInfo = `<small style="color:#0056b3;">${(distance / 1000).toFixed(1)}km · ${Math.round(duration / 60)}min</small>`;
-} catch (e) {
-distInfo = `<small style="color:#ff5252;">Distância não calculada</small>`;
 }
-}
-html += `
-<div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
-<div class="route-header">
-<div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
-${concluido ? '✓' : i === 0 ? '' : i}
-</div>
-<div class="route-text">
-<strong>${i === 0 ? 'Ponto de Partida' : a.text}</strong>
-${distInfo}
-</div>
-</div>
-${ativo && !concluido ? `
-<div class="route-buttons">
-<button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">Maps</button>
-<button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">Waze</button>
-<button class="btn btn-complete btn-small" onclick="markCompleted(${i})">✓</button>
-</div>` : ''}
-</div>`;
+html += `<div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}"><div class="route-header"><div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">${concluido ? '✓' : i === 0 ? '' : i}</div><div class="route-text"><strong>${i === 0 ? 'Ponto de Partida' : a.text}</strong>${distInfo}</div></div>${ativo && !concluido ? `<div class="route-buttons"><button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">Maps</button><button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">Waze</button><button class="btn btn-complete btn-small" onclick="markCompleted(${i})">✓</button></div>` : ''}</div>`;
 }
 list.innerHTML = html;
 updateProgress();
@@ -967,46 +519,24 @@ updateProgress();
 function openMaps(i, app) {
 const a = optimizedRoute[i];
 const { lat, lon } = a.coords || {};
-if (app === 'google') {
-const url = lat && lon
-? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`
-: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.text)}`;
-window.open(url, '_blank');
-} else if (app === 'waze') {
+if (app === 'google') { window.open(lat && lon ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.text)}`, '_blank'); }
+else if (app === 'waze') {
 if (lat && lon) {
 const wazeUrl = `waze://?ll=${lat},${lon}&navigate=yes`;
 const iframe = document.createElement('iframe');
-iframe.style.display = 'none';
-iframe.src = wazeUrl;
-document.body.appendChild(iframe);
-setTimeout(() => {
-document.body.removeChild(iframe);
-if (document.hasFocus()) {
-window.open(`https://www.waze.com/ul?ll=${lat},${lon}&navigate=yes`, '_blank');
-}
-}, 2000);
-} else {
-window.open(`https://www.waze.com/ul?q=${encodeURIComponent(a.text)}`, '_blank');
+iframe.style.display = 'none'; iframe.src = wazeUrl; document.body.appendChild(iframe);
+setTimeout(() => { document.body.removeChild(iframe); if (document.hasFocus()) { window.open(`https://www.waze.com/ul?ll=${lat},${lon}&navigate=yes`, '_blank'); } }, 2000);
+} else { window.open(`https://www.waze.com/ul?q=${encodeURIComponent(a.text)}`, '_blank'); }
 }
 }
-}
-function markCompleted(i) {
-optimizedRoute[i].completed = true;
-if (i < optimizedRoute.length - 1) activeIndex = i + 1;
-renderRoute();
-}
+function markCompleted(i) { optimizedRoute[i].completed = true; if (i < optimizedRoute.length - 1) activeIndex = i + 1; renderRoute(); }
 function updateProgress() {
 const concluidos = optimizedRoute.slice(1).filter(a => a.completed).length;
 const total = optimizedRoute.length - 1;
 document.getElementById('progress-bar').innerHTML = `<strong>${concluidos} de ${total}</strong> paradas concluídas`;
 }
 function resetRoute() {
-optimizedRoute = [];
-activeIndex = 0;
-addresses = [];
-departure = null;
-userLocation = null;
-distanceCache.clear();
+optimizedRoute = []; activeIndex = 0; addresses = []; departure = null; userLocation = null; distanceCache.clear();
 document.getElementById('base-location-section').style.display = 'block';
 document.getElementById('departure-section').style.display = 'none';
 document.getElementById('add-section').style.display = 'block';
@@ -1015,7 +545,7 @@ renderAddressList();
 document.getElementById('optimize-btn').style.display = 'none';
 document.getElementById('status-container').innerHTML = '';
 document.getElementById('base-location-input').value = '';
-document.getElementById('base-location-display').textContent = 'Nenhuma localização base definida. Por favor, defina para continuar.';
+document.getElementById('base-location-display').textContent = 'Nenhuma localização base definida.';
 document.getElementById('departure-input').value = '';
 document.getElementById('departure-display').textContent = 'Nenhum ponto de partida definido.';
 document.getElementById('address-input').value = '';
@@ -1023,222 +553,81 @@ document.getElementById('suggestions-container').style.display = 'none';
 document.getElementById('departure-suggestions').style.display = 'none';
 stopCamera();
 }
-function requestVoicePermissionAndStart() {
-if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
-return showStatus('Voz não suportada.', 'warning');
-}
-if (!userLocation) return showStatus('Defina localização base.', 'warning');
-startVoice();
-}
+function requestVoicePermissionAndStart() { if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) return showStatus('Voz não suportada.', 'warning'); if (!userLocation) return showStatus('Defina localização base.', 'warning'); startVoice(); }
 function startVoice() {
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const recognition = new SpeechRecognition();
-recognition.lang = 'pt-BR';
-recognition.interimResults = false;
-const btn = document.getElementById('voice-btn');
-btn.disabled = true;
-recognition.onstart = () => {
-isListening = true;
-btn.classList.add('listening');
-btn.textContent = 'Ouvindo...';
-showStatus('Fale o endereço...', 'info');
-};
-recognition.onend = () => {
-isListening = false;
-btn.classList.remove('listening');
-btn.textContent = 'Voz';
-btn.disabled = false;
-};
-recognition.onresult = (e) => {
-const t = e.results[0][0].transcript.trim();
-document.getElementById('address-input').value = t;
-addAddress();
-};
-recognition.onerror = (e) => {
-const msg = e.error === 'not-allowed' ? 'Permissão de microfone negada.' : e.error;
-showStatus('Erro: ' + msg, 'warning');
-recognition.onend();
-};
+const recognition = new SpeechRecognition(); recognition.lang = 'pt-BR'; recognition.interimResults = false;
+const btn = document.getElementById('voice-btn'); btn.disabled = true;
+recognition.onstart = () => { isListening = true; btn.classList.add('listening'); btn.textContent = 'Ouvindo...'; showStatus('Fale o endereço...', 'info'); };
+recognition.onend = () => { isListening = false; btn.classList.remove('listening'); btn.textContent = 'Voz'; btn.disabled = false; };
+recognition.onresult = (e) => { const t = e.results[0][0].transcript.trim(); document.getElementById('address-input').value = t; addAddress(); };
+recognition.onerror = (e) => { showStatus('Erro: ' + e.error, 'warning'); recognition.onend(); };
 recognition.start();
 }
-async function requestCameraPermissionAndStart(mode) {
-if (!userLocation) return showStatus('Defina localização base.', 'warning');
-isPhotoMode = mode === 'photo';
-scannerType = isPhotoMode ? null : mode;
-let buttonsHTML = '';
-if (isPhotoMode) {
-buttonsHTML = `<button class="btn btn-capture" onclick="captureImage()">Capturar Foto</button>`;
-} else {
-buttonsHTML = `<button class="btn btn-capture" onclick="captureForScan()">Capturar Frame</button>`;
-}
-buttonsHTML += `<button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`;
-document.getElementById('camera-buttons').innerHTML = buttonsHTML;
-await startCamera();
-}
+async function requestCameraPermissionAndStart(mode) { if (!userLocation) return showStatus('Defina localização base.', 'warning'); isPhotoMode = mode === 'photo'; scannerType = isPhotoMode ? null : mode; let buttonsHTML = isPhotoMode ? `<button class="btn btn-capture" onclick="captureImage()">Capturar Foto</button>` : `<button class="btn btn-capture" onclick="captureForScan()">Capturar Frame</button>`; buttonsHTML += `<button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`; document.getElementById('camera-buttons').innerHTML = buttonsHTML; await startCamera(); }
 let scanInterval = null;
 async function startCamera() {
 try {
-cameraStream = await navigator.mediaDevices.getUserMedia({
-video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-});
-const video = document.getElementById('camera-video');
-video.srcObject = cameraStream;
-document.getElementById('camera-container').style.display = 'block';
+cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
+const video = document.getElementById('camera-video'); video.srcObject = cameraStream; document.getElementById('camera-container').style.display = 'block';
 if (scanInterval) clearInterval(scanInterval);
 if (!isPhotoMode && scannerType) {
-const canvas = document.createElement('canvas');
-const ctx = canvas.getContext('2d');
+const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
 scanInterval = setInterval(() => {
 if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
-canvas.width = video.videoWidth;
-canvas.height = video.videoHeight;
-ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+canvas.width = video.videoWidth; canvas.height = video.videoHeight; ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-if (scannerType === 'qr') {
-const code = jsQR(imageData.data, canvas.width, canvas.height);
-if (code) {
-handleScannedCode(code.data);
-clearInterval(scanInterval);
-stopCamera();
-}
-}
+if (scannerType === 'qr') { const code = jsQR(imageData.data, canvas.width, canvas.height); if (code) { handleScannedCode(code.data); clearInterval(scanInterval); stopCamera(); } }
 }
 }, 500);
 }
-} catch (e) {
-showStatus('Erro na câmera: ' + (e.name === 'NotAllowedError' ? 'Permissão negada' : 'Erro desconhecido'), 'warning');
-document.getElementById('camera-container').style.display = 'none';
-}
+} catch (e) { showStatus('Erro na câmera.', 'warning'); }
 }
 async function captureForScan() {
-const video = document.getElementById('camera-video');
-if (video.videoWidth === 0 || video.videoHeight === 0) {
-showStatus('Frame não pronto ainda. Tente novamente.', 'warning');
-return;
-}
-const canvas = document.createElement('canvas');
-canvas.width = video.videoWidth;
-canvas.height = video.videoHeight;
-const ctx = canvas.getContext('2d');
-ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+const video = document.getElementById('camera-video'); if (video.videoWidth === 0) return;
+const canvas = document.createElement('canvas'); canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-showStatus('Processando frame capturado...', 'info');
-if (scannerType === 'qr') {
-const code = jsQR(imageData.data, canvas.width, canvas.height);
-if (code) {
-handleScannedCode(code.data);
-stopCamera();
-return;
+if (scannerType === 'qr') { const code = jsQR(imageData.data, canvas.width, canvas.height); if (code) { handleScannedCode(code.data); stopCamera(); return; } }
+else if (scannerType === 'barcode') { Quagga.decodeSingle({ decoder: { readers: ['code_128_reader', 'ean_reader', 'code_39_reader'] }, locate: true, src: canvas.toDataURL('image/png') }, (result) => { if (result?.codeResult) { handleScannedCode(result.codeResult.code); stopCamera(); } else { showStatus('Não detectado.', 'warning'); } }); return; }
+showStatus('Não detectado.', 'warning');
 }
-} else if (scannerType === 'barcode') {
-Quagga.decodeSingle({
-decoder: { readers: ['code_128_reader', 'ean_reader', 'ean_8_reader', 'code_39_reader', 'codabar_reader', 'upc_reader', 'i2of5_reader'] },
-locate: true,
-src: canvas.toDataURL('image/png')
-}, (result) => {
-if (result && result.codeResult) {
-handleScannedCode(result.codeResult.code);
-stopCamera();
-} else {
-showStatus('Código não detectado neste frame. Tente reposicionar.', 'warning');
-}
-});
-return;
-}
-showStatus('Código não detectado. Tente novamente.', 'warning');
-}
-function stopCamera() {
-if (scanInterval) {
-clearInterval(scanInterval);
-scanInterval = null;
-}
-if (cameraStream) {
-cameraStream.getTracks().forEach(t => t.stop());
-cameraStream = null;
-}
-document.getElementById('camera-container').style.display = 'none';
-}
+function stopCamera() { if (scanInterval) clearInterval(scanInterval); if (cameraStream) cameraStream.getTracks().forEach(t => t.stop()); document.getElementById('camera-container').style.display = 'none'; }
 async function captureImage() {
-const video = document.getElementById('camera-video');
-const canvas = document.createElement('canvas');
-canvas.width = video.videoWidth;
-canvas.height = video.videoHeight;
-canvas.getContext('2d').drawImage(video, 0, 0);
+const video = document.getElementById('camera-video'); const canvas = document.createElement('canvas'); canvas.width = video.videoWidth; canvas.height = video.videoHeight; canvas.getContext('2d').drawImage(video, 0, 0);
 showStatus('Extraindo texto...', 'info');
-try {
-const result = await Tesseract.recognize(canvas.toDataURL('image/png'), 'por');
-const clean = result.data.text.trim().replace(/\n/g, ' ');
-document.getElementById('address-input').value = clean;
-addAddress();
-showStatus('Texto extraído com sucesso!', 'success');
-} catch (err) {
-console.error('OCR error:', err);
-showStatus('Erro no OCR: tente outra foto.', 'warning');
-}
+try { const result = await Tesseract.recognize(canvas.toDataURL('image/png'), 'por'); document.getElementById('address-input').value = result.data.text.trim().replace(/\n/g, ' '); addAddress(); }
+catch (err) { showStatus('Erro no OCR.', 'warning'); }
 stopCamera();
 }
-function handleScannedCode(code) {
-document.getElementById('address-input').value = code;
-addAddress();
-showStatus('Código escaneado com sucesso!', 'success');
-}
-function addUserLocationManually() {
-showStatus('Minha Posição: use o botão em “Ponto de Partida”.', 'info');
-}
-function showStatus(message, type = 'info') {
-const c = document.getElementById('status-container');
-const cls = type === 'success' ? 'status-success' : type === 'warning' ? 'status-warning' : 'status-info';
-c.innerHTML = `<div class="status-bar ${cls}">${message}</div>`;
-if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
-}
-function uploadPdf() {
-document.getElementById('pdf-upload').click();
-}
+function handleScannedCode(code) { document.getElementById('address-input').value = code; addAddress(); }
+function addUserLocationManually() { showStatus('Use o botão em “Ponto de Partida”.', 'info'); }
+function showStatus(message, type = 'info') { const c = document.getElementById('status-container'); const cls = type === 'success' ? 'status-success' : type === 'warning' ? 'status-warning' : 'status-info'; c.innerHTML = `<div class="status-bar ${cls}">${message}</div>`; if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000); }
+function uploadPdf() { document.getElementById('pdf-upload').click(); }
 async function processPdf(e) {
-const file = e.target.files[0];
-if (!file) return;
-showStatus('Processando PDF...', 'info');
+const file = e.target.files[0]; if (!file) return;
+showStatus('Lendo PDF (Otimizado)...', 'info');
 try {
-const PDFJS = window.pdfjsLib;
-const loadingTask = PDFJS.getDocument(URL.createObjectURL(file));
-const pdf = await loadingTask.promise;
+const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
 let fullText = '';
-for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-const page = await pdf.getPage(pageNum);
-const textContent = await page.getTextContent();
-const pageText = textContent.items.map(item => item.str).join(' ');
-fullText += pageText + ' ';
+for (let i = 1; i <= pdf.numPages; i++) {
+const page = await pdf.getPage(i);
+const text = await page.getTextContent();
+fullText += text.items.map(item => item.str).join(' ') + ' ';
 }
 const pattern = /Endereço:\s*(.+?),\s*(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
 const matches = [...fullText.matchAll(pattern)];
-if (matches.length === 0) {
-showStatus('Nenhum endereço encontrado no formato esperado.', 'warning');
-e.target.value = '';
-return;
+if (matches.length === 0) { showStatus('Nenhum endereço encontrado.', 'warning'); return; }
+showStatus(`Processando ${matches.length} endereços...`, 'info');
+for (const m of matches) {
+const addr = `${m[1].trim()}, ${m[2].trim()}, CEP: ${m[3]}-${m[4]}`;
+const coords = await geocodeAddressFull(addr);
+addresses.push({ id: Date.now() + Math.random(), text: addr, coords: coords || null, completed: false });
+await new Promise(r => setTimeout(r, 300));
 }
-for (const match of matches) {
-const logradouro = match[1].trim();
-const numero = match[2].trim();
-const cep = `${match[3]}-${match[4]}`;
-const enderecoCompleto = `${logradouro}, ${numero}, CEP: ${cep}`;
-const coords = await geocodeAddressFull(enderecoCompleto);
-addresses.push({
-id: Date.now() + Math.random(),
-text: enderecoCompleto,
-coords: coords || null,
-completed: false
-});
-await new Promise(resolve => setTimeout(resolve, 500));
-}
-renderAddressList();
-document.getElementById('optimize-btn').style.display = 'block';
-showStatus(`${matches.length} endereços adicionados do PDF!`, 'success');
-} catch (err) {
-console.error('Erro ao processar PDF:', err);
-showStatus(`Erro ao ler o PDF: ${err.message}`, 'warning');
-} finally {
-e.target.value = '';
-}
+renderAddressList(); document.getElementById('optimize-btn').style.display = 'block';
+showStatus(`${matches.length} endereços adicionados!`, 'success');
+} catch (err) { showStatus('Erro no PDF.', 'warning'); } finally { e.target.value = ''; }
 }
 </script>
 </body>
