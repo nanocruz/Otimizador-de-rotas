@@ -478,32 +478,51 @@ if (e.key === 'Enter') setDepartureAddress();
 });
 };
 async function processCEP(text) {
-const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
-if (cepMatch) {
-const cep = cepMatch[1] + cepMatch[2];
-const numero = cepMatch[3] || '';
-showStatus('Buscando CEP...', 'info');
-try {
-const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
-const data = await resp.json();
-if (data.erro) throw new Error('CEP não encontrado');
-let endereco = data.logradouro || '';
-if (numero) endereco += `, ${numero}`;
-if (data.bairro) endereco += `, ${data.bairro}`;
-endereco += `, ${data.localidade}, ${data.uf}`;
-showStatus('CEP encontrado!', 'success');
-let coords = await geocodeBasic(`${endereco}, Brasil`);
-if (!coords) {
-const cityState = `${data.localidade}, ${data.uf}`;
-coords = await geocodeBasic(cityState);
-if (coords) showStatus('Coordenadas aproximadas (cidade)', 'warning');
-}
-return { success: true, address: endereco, coords: coords || null };
-} catch (e) {
-showStatus('CEP inválido: ' + e.message, 'warning');
-return { success: false, address: text, coords: null };
-}
-}
+  // Regex para capturar CEP e número da casa em qualquer ordem
+  // Formatos suportados:
+  // - CEP: 85855-185, 794
+  // - 85855-185, 794
+  // - 85855185, 794
+  // - CEP: 85855-185
+  const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
+
+  if (!cepMatch) return null;
+
+  const cep = cepMatch[1] + cepMatch[2];
+  let numero = cepMatch[3] || '';
+
+  showStatus('Buscando CEP...', 'info');
+
+  try {
+    const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+    const data = await resp.json();
+
+    if (data.erro) throw new Error('CEP não encontrado');
+
+    // Monta o endereço completo para geocodificação
+    let enderecoParaGeocode = `${data.logradouro || ''} ${numero ? `, ${numero}` : ''}`;
+    if (data.bairro) enderecoParaGeocode += `, ${data.bairro}`;
+    enderecoParaGeocode += `, ${data.localidade}, ${data.uf}`;
+
+    // Faz a geocodificação com o endereço completo (logradouro + número)
+    let coords = await geocodeBasic(enderecoParaGeocode);
+    if (!coords) {
+      // Se falhar, tenta com a cidade apenas
+      const cityState = `${data.localidade}, ${data.uf}`;
+      coords = await geocodeBasic(cityState);
+      if (coords) showStatus('Coordenadas aproximadas (cidade)', 'warning');
+    }
+
+    // Monta o texto final para exibição, incluindo o número e o CEP
+    const enderecoExibicao = `${data.logradouro || ''}${numero ? `, ${numero}` : ''}${data.bairro ? `, ${data.bairro}` : ''}, ${data.localidade}, ${data.uf}, CEP: ${cepMatch[1]}-${cepMatch[2]}`;
+
+    showStatus('CEP encontrado!', 'success');
+    return { success: true, address: enderecoExibicao, coords: coords || null };
+
+  } catch (e) {
+    showStatus('CEP inválido: ' + e.message, 'warning');
+    return { success: false, address: text, coords: null };
+  }
 return null;
 }
 async function geocodeBasic(address) {
@@ -641,21 +660,30 @@ document.getElementById('base-location-display').textContent = 'Falha ao definir
 }
 async function setDepartureAddress() {
   const input = document.getElementById('departure-input');
-  let text = input.value.trim();
+  const text = input.value.trim();
   if (!text) return showStatus('Digite um endereço de partida.', 'warning');
+
+  // Tenta processar como CEP primeiro
   const cepResult = await processCEP(text);
-  if (cepResult?.success) {
-    const coords = cepResult.coords || await geocodeAddressFull(cepResult.address);
-    if (!coords) {
-      showStatus('Endereço não encontrado.', 'warning');
-      return;
-    }
-    departure = { text: cepResult.address, coords };
-    document.getElementById('departure-display').textContent = departure.coords.display_name || departure.text;
-    input.value = '';
-    showStatus('Ponto de partida definido!', 'success');
+
+  if (cepResult?.success && cepResult.coords) {
+    // Usa o endereço completo retornado pela API ViaCEP + número
+    departure = { text: cepResult.address, coords: cepResult.coords };
+    document.getElementById('departure-display').textContent = cepResult.coords.display_name;
+    showStatus('Ponto de partida definido via CEP!', 'success');
     return;
   }
+
+  // Se não for CEP, trata como endereço normal
+  const coords = await geocodeAddressFull(text);
+  if (coords) {
+    departure = { text: text, coords };
+    document.getElementById('departure-display').textContent = coords.display_name;
+    showStatus('Ponto de partida definido!', 'success');
+  } else {
+    showStatus('Endereço de partida não encontrado.', 'warning');
+  }
+
   await searchAndSelectDeparture(text);
 }
 async function searchAndSelectDeparture(query) {
