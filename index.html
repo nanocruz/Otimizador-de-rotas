@@ -276,61 +276,93 @@ async function calculateRealDistance(from, to) {
   return result;
 }
 
-async function optimizeRouteNearestNeighbor(start, targets) {
-  let current = start;
-  let unvisited = [...targets];
-  let route = [];
-  while (unvisited.length > 0) {
-    let nearest = null;
-    let minDistance = Number.POSITIVE_INFINITY;
-    let nearestIndex = -1;
-    for (let i = 0; i < unvisited.length; i++) {
-      const { distance } = await calculateRealDistance(current.coords, unvisited[i].coords);
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearest = unvisited[i];
-        nearestIndex = i;
+
+
+
+async function calculateDistanceMatrix(points) {
+  const matrix = [];
+  for (let i = 0; i < points.length; i++) {
+    matrix[i] = [];
+    for (let j = 0; j < points.length; j++) {
+      if (i === j) {
+        matrix[i][j] = { distance: 0, duration: 0 };
+      } else {
+        matrix[i][j] = await calculateRealDistance(points[i].coords, points[j].coords);
       }
     }
-    route.push(nearest);
-    current = nearest;
-    unvisited.splice(nearestIndex, 1);
   }
-  return route;
+  return matrix;
 }
 
-async function twoOptImprovement(route, start) {
-  let improved = true;
-  let bestRoute = [...route];
-  async function getRouteDistance(r) {
-    let total = 0;
-    let prev = start.coords;
-    for (const p of r) {
-      const { distance } = await calculateRealDistance(prev, p.coords);
-      total += distance;
-      prev = p.coords;
+async function optimizeRouteSmart(start, targets) {
+  const allPoints = [start, ...targets];
+  const n = allPoints.length;
+  
+  // Pré-calcula a matriz de distâncias para evitar await dentro dos loops de otimização
+  const matrix = await calculateDistanceMatrix(allPoints);
+  
+  // Algoritmo de Construção: Inserção Mais Próxima (melhor que Nearest Neighbor)
+  let tour = [0]; // Começa no ponto de partida
+  let unvisited = Array.from({length: n - 1}, (_, i) => i + 1);
+  
+  while (unvisited.length > 0) {
+    let bestDist = Infinity;
+    let bestPointIdx = -1;
+    let insertPos = -1;
+    
+    for (let i = 0; i < unvisited.length; i++) {
+      const u = unvisited[i];
+      for (let j = 0; j < tour.length; j++) {
+        const curr = tour[j];
+        const next = tour[(j + 1) % tour.length];
+        
+        // Custo de inserção: d(curr, u) + d(u, next) - d(curr, next)
+        const dist = matrix[curr][u].distance + (j === tour.length - 1 ? 0 : matrix[u][next].distance - matrix[curr][next].distance);
+        
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestPointIdx = i;
+          insertPos = j + 1;
+        }
+      }
     }
-    return total;
+    
+    tour.splice(insertPos, 0, unvisited[bestPointIdx]);
+    unvisited.splice(bestPointIdx, 1);
   }
-  let bestDist = await getRouteDistance(bestRoute);
+  
+  // Refinamento com 2-opt (Síncrono e Rápido)
+  let improved = true;
   while (improved) {
     improved = false;
-    for (let i = 0; i < bestRoute.length - 1; i++) {
-      for (let j = i + 1; j < bestRoute.length; j++) {
-        let newRoute = [...bestRoute];
-        let sub = newRoute.slice(i, j + 1).reverse();
-        newRoute.splice(i, sub.length, ...sub);
-        let newDist = await getRouteDistance(newRoute);
-        if (newDist < bestDist) {
-          bestRoute = newRoute;
-          bestDist = newDist;
+    for (let i = 1; i < n - 1; i++) {
+      for (let j = i + 1; j < n; j++) {
+        // Posições: i-1, i ... j, j+1
+        const p1 = tour[i-1];
+        const p2 = tour[i];
+        const p3 = tour[j];
+        const p4 = (j + 1 < n) ? tour[j+1] : -1;
+        
+        let currentDist = matrix[p1][p2].distance;
+        if (p4 !== -1) currentDist += matrix[p3][p4].distance;
+        
+        let newDist = matrix[p1][p3].distance;
+        if (p4 !== -1) newDist += matrix[p2][p4].distance;
+        
+        if (newDist < currentDist - 0.0001) { // Pequena margem de precisão
+          // Inverte o segmento de i a j
+          const segment = tour.slice(i, j + 1).reverse();
+          tour.splice(i, segment.length, ...segment);
           improved = true;
         }
       }
     }
   }
-  return bestRoute;
+  
+  // Converte índices de volta para objetos, removendo o ponto de partida (índice 0)
+  return tour.slice(1).map(idx => allPoints[idx]);
 }
+
 
 async function addAddress() {
   if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
@@ -529,8 +561,7 @@ async function optimizeRoute() {
     }
     if (destinosValidos.length === 0) return showStatus('Nenhum destino válido.', 'warning');
     showStatus('Calculando melhor rota...', 'info');
-    let optimized = await optimizeRouteNearestNeighbor(departure, destinosValidos);
-    if (optimized.length > 3) optimized = await twoOptImprovement(optimized, departure);
+    let optimized = await optimizeRouteSmart(departure, destinosValidos);
     optimizedRoute = [{ ...departure, completed: true }, ...optimized];
     activeIndex = 1;
     document.getElementById('add-section').style.display = 'none';
