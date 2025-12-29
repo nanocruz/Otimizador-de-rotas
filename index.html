@@ -1,19 +1,3 @@
-O erro **"No valid destinations with coordinates."** ocorre porque, após as alterações feitas no seu código, a função `optimizeRoute()` está recebendo destinos cujas coordenadas (`coords`) são inválidas ou nulas — ou seja, não passam pela validação rigorosa feita por `normalizeCoords()`.
-
-Analisando o código, o problema mais provável está na forma como os endereços são adicionados à lista `addresses`. Em alguns caminhos (especialmente ao usar CEP ou sugestões), a estrutura do objeto `coords` pode não ter propriedades `lat`/`lon` como números válidos, ou o objeto pode ser malformado (ex: `{ lat: "...", lon: "..." }` com strings em vez de números).
-
-Além disso, **a função `normalizeCoords()` retorna `null` se `lat` ou `lon` forem `NaN`**, e isso faz com que `validAddresses` fique vazio, gerando a mensagem de erro.
-
-## Correções aplicadas:
-
-1. **Garantir que `coords.lat` e `coords.lon` sejam sempre números válidos** nos fluxos de CEP, sugestões e geocodificação.
-2. **Corrigir o processamento de CEP** para evitar adicionar endereços com coordenadas inválidas.
-3. **Validar rigorosamente antes de adicionar à lista `addresses`** — só adicionar se `coords.lat` e `coords.lon` forem números.
-4. **Ajustar o fluxo de fallback**: se o CEP falhar em gerar coordenadas válidas, não deve adicionar endereço parcial.
-
-Abaixo está o **arquivo HTML completo reescrito**, com todas as correções integradas e **sem comentários**, conforme solicitado:
-
-```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -905,4 +889,3 @@ function deleteAddress(id) {
 </script>
 </body>
 </html>
-```
