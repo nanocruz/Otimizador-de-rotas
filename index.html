@@ -333,94 +333,65 @@ async function calculateRealDistance(from, to) {
 
 // --- Funções restantes mantidas com pequenas melhorias ---
 async function addAddress() {
-  if (!userLocation) {
-    showStatus('⚠️ Defina a localização base primeiro.', 'warning');
-    return;
-  }
-  
+  if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
   const input = document.getElementById('address-input');
   let text = input.value.trim();
-  
-  if (!text) {
-    showStatus('⚠️ Digite um endereço.', 'warning');
-    return;
-  }
+  if (!text) return;
 
-  console.log('🔍 Adicionando endereço:', text);
-  showStatus('🔍 Buscando endereço...', 'info');
+  showStatus('Buscando endereço...', 'info');
 
-  // Tenta processar como CEP primeiro
+  // Tenta processar como CEP
   const cepResult = await processCEP(text);
-  
-  if (cepResult?.success && cepResult.coords) {
-    console.log('✅ CEP encontrado:', cepResult);
-    
-    const newAddress = {
-      id: Date.now(),
-      text: cepResult.address,
-      coords: {
-        lat: parseFloat(cepResult.coords.lat),
-        lon: parseFloat(cepResult.coords.lon),
-        display_name: cepResult.coords.display_name
-      },
-      completed: false
-    };
-    
-    // VERIFICAÇÃO FINAL
-    console.log('🔬 Verificando coordenadas:', newAddress.coords);
-    console.log('  - lat:', newAddress.coords.lat, 'tipo:', typeof newAddress.coords.lat, 'isNaN:', isNaN(newAddress.coords.lat));
-    console.log('  - lon:', newAddress.coords.lon, 'tipo:', typeof newAddress.coords.lon, 'isNaN:', isNaN(newAddress.coords.lon));
-    
-    addresses.push(newAddress);
-    input.value = '';
-    renderAddressList();
-    document.getElementById('optimize-btn').style.display = 'block';
-    showStatus('✅ Endereço adicionado!', 'success');
-    
-    console.log('📦 Array de endereços atual:', addresses);
-    return;
+  if (cepResult?.success) {
+    // Verifica se as coordenadas são válidas
+    if (cepResult.coords && 
+        typeof cepResult.coords.lat === 'number' && 
+        typeof cepResult.coords.lon === 'number' &&
+        !isNaN(cepResult.coords.lat) && 
+        !isNaN(cepResult.coords.lon)) {
+      addresses.push({
+        id: Date.now(),
+        text: cepResult.address,
+        coords: cepResult.coords,
+        completed: false
+      });
+      input.value = '';
+      renderAddressList();
+      document.getElementById('optimize-btn').style.display = 'block';
+      showStatus('Endereço adicionado com sucesso!', 'success');
+      return;
+    } else {
+      showStatus('CEP encontrado mas sem coordenadas válidas. Tentando busca alternativa...', 'warning');
+      // Continua para tentar geocodificação normal
+    }
   }
 
-  // Se não é CEP, busca por geocodificação normal
-  console.log('🌍 Não é CEP, buscando via geocoding...');
+  // Caso contrário, busca via Nominatim
   const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
-  console.log('🔎 Query completa:', fullQuery);
-  
   const coords = await geocodeBasic(fullQuery);
   
-  if (coords) {
-    console.log('✅ Geocoding bem-sucedido:', coords);
-    
-    const newAddress = {
+  // Verifica se a geocodificação foi bem-sucedida com validação rigorosa
+  if (coords && 
+      typeof coords.lat === 'number' && 
+      typeof coords.lon === 'number' &&
+      !isNaN(coords.lat) && 
+      !isNaN(coords.lon)) {
+    addresses.push({
       id: Date.now(),
       text: text,
-      coords: {
-        lat: parseFloat(coords.lat),
-        lon: parseFloat(coords.lon),
-        display_name: coords.display_name
-      },
+      coords: coords,
       completed: false
-    };
-    
-    // VERIFICAÇÃO FINAL
-    console.log('🔬 Verificando coordenadas:', newAddress.coords);
-    console.log('  - lat:', newAddress.coords.lat, 'tipo:', typeof newAddress.coords.lat, 'isNaN:', isNaN(newAddress.coords.lat));
-    console.log('  - lon:', newAddress.coords.lon, 'tipo:', typeof newAddress.coords.lon, 'isNaN:', isNaN(newAddress.coords.lon));
-    
-    addresses.push(newAddress);
+    });
     input.value = '';
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
-    showStatus('✅ Endereço adicionado!', 'success');
-    
-    console.log('📦 Array de endereços atual:', addresses);
+    showStatus('Endereço adicionado com sucesso!', 'success');
   } else {
-    // Se falhar, abre sugestões
-    console.log('⚠️ Geocoding falhou, abrindo sugestões...');
+    // Se falhar, abre as sugestões como fallback
+    showStatus('Buscando sugestões de endereços...', 'info');
     await searchAndSelectAddress(text);
   }
 }
-
 async function searchAndSelectAddress(query) {
   const suggestionsContainer = document.getElementById('suggestions-container');
   suggestionsContainer.style.display = 'block';
@@ -608,19 +579,35 @@ function selectDepartureSuggestion(index) {
   document.getElementById('departure-suggestions').style.display = 'none';
   showStatus('Ponto de partida adicionado!', 'success');
 }
+function normalizeCoords(coords) {
+  if (!coords) return null;
+
+  const lat = Number(coords.lat);
+  const lon = Number(coords.lon);
+
+  if (isNaN(lat) || isNaN(lon)) return null;
+
+  return { lat, lon };
+}
 
 async function optimizeRoute() {
+  departure.coords = normalizeCoords(departure.coords);
+
+if (!departure.coords) {
+  return showStatus('Ponto de partida sem coordenadas válidas.', 'warning');
+}
+
   if (!departure || !departure.coords || addresses.length === 0) {
     return showStatus('Define a departure point and valid destinations.', 'warning');
   }
 
   // 🔹 Filter only valid destinations
-  const validAddresses = addresses.filter(
-    a =>
-      a.coords &&
-      typeof a.coords.lat === 'number' &&
-      typeof a.coords.lon === 'number'
-  );
+const validAddresses = addresses
+  .map(a => {
+    const normalized = normalizeCoords(a.coords);
+    return normalized ? { ...a, coords: normalized } : null;
+  })
+  .filter(Boolean);
 
   if (validAddresses.length === 0) {
     return showStatus('No valid destinations with coordinates.', 'warning');
