@@ -183,215 +183,160 @@ window.onload = () => {
 async function geocodeBasic(address) {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1&accept-language=pt-BR`;
-    const resp = await fetch(url, {
-      headers: {
-        'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)'
-      }
-    });
+    const resp = await fetch(url, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)' } });
     const data = await resp.json();
     if (data?.length > 0) {
-      return {
-        lat: parseFloat(data[0].lat),
-        lon: parseFloat(data[0].lon),
-        display_name: data[0].display_name
-      };
+      return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), display_name: data[0].display_name };
     }
-  } catch (e) {
-    console.error('Erro na geocodificação:', e);
-  }
+  } catch (e) { console.error('Erro na geocodificação:', e); }
   return null;
 }
 
 async function processCEP(text) {
   const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
   if (!cepMatch) return null;
-
   const cep = cepMatch[1] + cepMatch[2];
   const numero = cepMatch[3] || '';
-
-  showStatus('Searching CEP...', 'info');
-
+  showStatus('Buscando CEP...', 'info');
   try {
     const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
     const data = await resp.json();
-    if (data.erro) throw new Error('CEP not found');
-
+    if (data.erro) throw new Error('CEP não encontrado');
     let addressText = data.logradouro || '';
     if (numero) addressText += `, ${numero}`;
     if (data.bairro) addressText += `, ${data.bairro}`;
     addressText += `, ${data.localidade}, ${data.uf}`;
-
-    // 🔹 FIRST TRY: full address
     let coords = await geocodeBasic(`${addressText}, Brasil`);
-
-    // 🔹 SECOND TRY: CEP-only (centroid)
-    if (!coords) {
-      coords = await geocodeBasic(`${cep}, Brasil`);
-    }
-
-    // 🔹 THIRD TRY: city fallback (ALWAYS WORKS)
-    if (!coords) {
-      coords = await geocodeBasic(`${data.localidade}, ${data.uf}, Brasil`);
-    }
-
-    if (!coords) {
-      throw new Error('Coordinates not found');
-    }
-
-    showStatus('CEP found!', 'success');
-
-    return {
-      success: true,
-      address: addressText,
-      coords
-    };
-
+    if (!coords) coords = await geocodeBasic(`${cep}, Brasil`);
+    if (!coords) coords = await geocodeBasic(`${data.localidade}, ${data.uf}, Brasil`);
+    if (!coords) throw new Error('Coordenadas não encontradas');
+    showStatus('CEP encontrado!', 'success');
+    return { success: true, address: addressText, coords };
   } catch (e) {
-    showStatus('Invalid CEP: ' + e.message, 'warning');
+    showStatus('CEP inválido: ' + e.message, 'warning');
     return { success: false };
   }
 }
 
 async function calculateRealDistance(from, to) {
-  // 🔒 HARD VALIDATION — prevents null/undefined crashes
-  if (
-    !from || !to ||
-    typeof from.lat !== 'number' ||
-    typeof from.lon !== 'number' ||
-    typeof to.lat !== 'number' ||
-    typeof to.lon !== 'number'
-  ) {
-    return {
-      distance: Number.POSITIVE_INFINITY,
-      duration: Number.POSITIVE_INFINITY
-    };
+  if (!from || !to || typeof from.lat !== 'number' || typeof from.lon !== 'number' || typeof to.lat !== 'number' || typeof to.lon !== 'number') {
+    return { distance: Number.POSITIVE_INFINITY, duration: Number.POSITIVE_INFINITY };
   }
-
-  // 🔑 Cache key (order-independent)
   const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
-  if (distanceCache.has(key)) {
-    return distanceCache.get(key);
-  }
-
-  // 🌐 TRY REAL ROAD DISTANCE (OSRM – free public service)
+  if (distanceCache.has(key)) return distanceCache.get(key);
   try {
-    const url =
-      `https://routing.openstreetmap.de/routed-car/route/v1/driving/` +
-      `${from.lon},${from.lat};${to.lon},${to.lat}` +
-      `?overview=false`;
-
-    const resp = await fetch(url, {
-      headers: {
-        'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)'
-      }
-    });
-
+    const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
+    const resp = await fetch(url, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)' } });
     if (resp.ok) {
       const data = await resp.json();
-
       if (data?.code === 'Ok' && data.routes?.length > 0) {
-        const route = data.routes[0];
-
-        const result = {
-          distance: route.distance,   // meters
-          duration: route.duration    // seconds
-        };
-
+        const result = { distance: data.routes[0].distance, duration: data.routes[0].duration };
         distanceCache.set(key, result);
         return result;
       }
     }
-  } catch (err) {
-    console.warn('Road routing failed, using Haversine fallback.', err);
-  }
-
-  // 🧮 FALLBACK — HAVERSINE (straight-line distance)
-  const R = 6371000; // Earth radius in meters
-
+  } catch (err) { console.warn('Roteamento falhou, usando Haversine.', err); }
+  const R = 6371000;
   const φ1 = from.lat * Math.PI / 180;
   const φ2 = to.lat * Math.PI / 180;
   const Δφ = (to.lat - from.lat) * Math.PI / 180;
   const Δλ = (to.lon - from.lon) * Math.PI / 180;
-
-  const a =
-    Math.sin(Δφ / 2) ** 2 +
-    Math.cos(φ1) * Math.cos(φ2) *
-    Math.sin(Δλ / 2) ** 2;
-
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
   const distance = R * c;
-
-  // 🚗 Average urban speed fallback ≈ 50 km/h (13.89 m/s)
   const duration = distance / 13.89;
-
   const result = { distance, duration };
   distanceCache.set(key, result);
-
   return result;
 }
 
-// --- Funções restantes mantidas com pequenas melhorias ---
+async function optimizeRouteNearestNeighbor(start, targets) {
+  let current = start;
+  let unvisited = [...targets];
+  let route = [];
+  while (unvisited.length > 0) {
+    let nearest = null;
+    let minDistance = Number.POSITIVE_INFINITY;
+    let nearestIndex = -1;
+    for (let i = 0; i < unvisited.length; i++) {
+      const { distance } = await calculateRealDistance(current.coords, unvisited[i].coords);
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearest = unvisited[i];
+        nearestIndex = i;
+      }
+    }
+    route.push(nearest);
+    current = nearest;
+    unvisited.splice(nearestIndex, 1);
+  }
+  return route;
+}
+
+async function twoOptImprovement(route, start) {
+  let improved = true;
+  let bestRoute = [...route];
+  async function getRouteDistance(r) {
+    let total = 0;
+    let prev = start.coords;
+    for (const p of r) {
+      const { distance } = await calculateRealDistance(prev, p.coords);
+      total += distance;
+      prev = p.coords;
+    }
+    return total;
+  }
+  let bestDist = await getRouteDistance(bestRoute);
+  while (improved) {
+    improved = false;
+    for (let i = 0; i < bestRoute.length - 1; i++) {
+      for (let j = i + 1; j < bestRoute.length; j++) {
+        let newRoute = [...bestRoute];
+        let sub = newRoute.slice(i, j + 1).reverse();
+        newRoute.splice(i, sub.length, ...sub);
+        let newDist = await getRouteDistance(newRoute);
+        if (newDist < bestDist) {
+          bestRoute = newRoute;
+          bestDist = newDist;
+          improved = true;
+        }
+      }
+    }
+  }
+  return bestRoute;
+}
+
 async function addAddress() {
   if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
   const input = document.getElementById('address-input');
   let text = input.value.trim();
   if (!text) return;
-
   showStatus('Buscando endereço...', 'info');
-
-  // Tenta processar como CEP
   const cepResult = await processCEP(text);
   if (cepResult?.success) {
-    // Verifica se as coordenadas são válidas
-    if (cepResult.coords && 
-        typeof cepResult.coords.lat === 'number' && 
-        typeof cepResult.coords.lon === 'number' &&
-        !isNaN(cepResult.coords.lat) && 
-        !isNaN(cepResult.coords.lon)) {
-      addresses.push({
-        id: Date.now(),
-        text: cepResult.address,
-        coords: cepResult.coords,
-        completed: false
-      });
+    if (cepResult.coords && typeof cepResult.coords.lat === 'number' && !isNaN(cepResult.coords.lat)) {
+      addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, completed: false });
       input.value = '';
       renderAddressList();
       document.getElementById('optimize-btn').style.display = 'block';
-      showStatus('Endereço adicionado com sucesso!', 'success');
+      showStatus('Endereço adicionado!', 'success');
       return;
-    } else {
-      showStatus('CEP encontrado mas sem coordenadas válidas. Tentando busca alternativa...', 'warning');
-      // Continua para tentar geocodificação normal
     }
   }
-
-  // Caso contrário, busca via Nominatim
   const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
   const coords = await geocodeBasic(fullQuery);
-  
-  // Verifica se a geocodificação foi bem-sucedida com validação rigorosa
-  if (coords && 
-      typeof coords.lat === 'number' && 
-      typeof coords.lon === 'number' &&
-      !isNaN(coords.lat) && 
-      !isNaN(coords.lon)) {
-    addresses.push({
-      id: Date.now(),
-      text: text,
-      coords: coords,
-      completed: false
-    });
+  if (coords && typeof coords.lat === 'number' && !isNaN(coords.lat)) {
+    addresses.push({ id: Date.now(), text: text, coords: coords, completed: false });
     input.value = '';
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
-    showStatus('Endereço adicionado com sucesso!', 'success');
+    showStatus('Endereço adicionado!', 'success');
   } else {
-    // Se falhar, abre as sugestões como fallback
-    showStatus('Buscando sugestões de endereços...', 'info');
+    showStatus('Buscando sugestões...', 'info');
     await searchAndSelectAddress(text);
   }
 }
+
 async function searchAndSelectAddress(query) {
   const suggestionsContainer = document.getElementById('suggestions-container');
   suggestionsContainer.style.display = 'block';
@@ -404,40 +349,27 @@ async function searchAndSelectAddress(query) {
     });
     const results = await resp.json();
     if (!results || results.length === 0) {
-      suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Nenhum endereço encontrado. Tente com CEP.</div>';
+      suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Nenhum endereço encontrado.</div>';
       setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
       return;
     }
     let html = '<h4 style="margin:10px 0;color:#333;">Escolha o endereço correto:</h4>';
     results.forEach((res, i) => {
       const addr = res.address || {};
-      const street = addr.road || '';
-      const number = addr.house_number || '';
-      const neighborhood = addr.suburb || addr.neighbourhood || addr.city_district || '—';
-      const postcode = addr.postcode || '';
-      const city = addr.city || userLocation.city;
-      const display = `${street}${number ? ', ' + number : ''} – ${neighborhood}${postcode ? ' (CEP: ' + postcode + ')' : ''}`;
-      html += `<div class="address-item suggestion-item" onclick="selectSuggestion(${i})"><div style="font-size:14px;">${display}</div><small style="color:#666;">${city}, ${userLocation.state}</small></div>`;
+      const display = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''} – ${addr.suburb || addr.neighbourhood || ''}`;
+      html += `<div class="address-item suggestion-item" onclick="selectSuggestion(${i})"><div>${display}</div><small>${addr.city || userLocation.city}</small></div>`;
     });
     suggestionsContainer.innerHTML = html;
     window.pendingSuggestions = results;
-  } catch (e) {
-    suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>';
-    setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
-  }
+  } catch (e) { suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>'; }
 }
 
 function selectSuggestion(index) {
   const result = window.pendingSuggestions?.[index];
   if (!result) return;
   const addr = result.address || {};
-  let displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
-  if (addr.neighbourhood) displayText += `, ${addr.neighbourhood}`;
-  if (addr.suburb) displayText += `, ${addr.suburb}`;
-  if (addr.city) displayText += `, ${addr.city}`;
-  if (addr.state) displayText += `, ${addr.state}`;
-  if (!displayText) displayText = result.display_name;
-  addresses.push({ id: Date.now(), text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon), display_name: result.display_name }, completed: false });
+  let displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}, ${addr.suburb || ''}, ${addr.city || ''}`;
+  addresses.push({ id: Date.now(), text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon) }, completed: false });
   document.getElementById('address-input').value = '';
   renderAddressList();
   document.getElementById('optimize-btn').style.display = 'block';
@@ -465,7 +397,6 @@ async function geocodeBaseLocation(locationText) {
     if (!city) throw new Error('Cidade não identificada.');
     userLocation = { city, state };
     document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
-    document.getElementById('address-input').placeholder = `Ex: Rua das Flores, 123 ou CEP (em ${city})`;
     document.getElementById('departure-section').style.display = 'block';
     showStatus(`Localização base definida!`, 'success');
   } catch (error) {
@@ -477,24 +408,15 @@ async function geocodeBaseLocation(locationText) {
 async function setDepartureAddress() {
   const input = document.getElementById('departure-input');
   const text = input.value.trim();
-  if (!text) return showStatus('Enter a departure address.', 'warning');
-
-  // ✅ CEP FIRST
+  if (!text) return showStatus('Informe o ponto de partida.', 'warning');
   const cepResult = await processCEP(text);
-
   if (cepResult?.success) {
-    departure = {
-      text: cepResult.address,
-      coords: cepResult.coords
-    };
-
+    departure = { text: cepResult.address, coords: cepResult.coords };
     document.getElementById('departure-display').textContent = departure.text;
     input.value = '';
-    showStatus('Departure point set!', 'success');
+    showStatus('Partida definida!', 'success');
     return;
   }
-
-  // 🔁 Normal address fallback
   await searchAndSelectDeparture(text);
 }
 
@@ -503,29 +425,10 @@ async function setDepartureCurrentLocation() {
   showStatus('Obtendo sua localização...', 'info');
   navigator.geolocation.getCurrentPosition(async (pos) => {
     const { latitude, longitude } = pos.coords;
-    try {
-      const data = await (await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1&accept-language=pt-BR`, {
-        headers: { 'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)' }
-      })).json();
-      let displayText = '';
-      if (data.address) {
-        const addr = data.address;
-        displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
-        if (addr.neighbourhood) displayText += `, ${addr.neighbourhood}`;
-        if (addr.suburb) displayText += `, ${addr.suburb}`;
-        if (addr.city) displayText += `, ${addr.city}`;
-        if (addr.state) displayText += `, ${addr.state}`;
-      }
-      if (!displayText) displayText = data.display_name || `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})`;
-      departure = { text: displayText, coords: { lat: latitude, lon: longitude, display_name: data.display_name || displayText } };
-      document.getElementById('departure-display').textContent = displayText;
-      showStatus('Partida definida!', 'success');
-    } catch (e) {
-      departure = { text: 'Minha localização atual', coords: { lat: latitude, lon: longitude, display_name: `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})` } };
-      document.getElementById('departure-display').textContent = departure.coords.display_name;
-      showStatus('Localização usada!', 'warning');
-    }
-  }, (err) => showStatus('Erro na localização: ' + err.message, 'warning'), { enableHighAccuracy: true, timeout: 10000 });
+    departure = { text: 'Minha localização atual', coords: { lat: latitude, lon: longitude } };
+    document.getElementById('departure-display').textContent = 'Minha localização atual';
+    showStatus('Partida definida!', 'success');
+  }, (err) => showStatus('Erro na localização: ' + err.message, 'warning'), { enableHighAccuracy: true });
 }
 
 async function searchAndSelectDeparture(query) {
@@ -541,114 +444,78 @@ async function searchAndSelectDeparture(query) {
     const results = await resp.json();
     if (!results || results.length === 0) {
       suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Nenhum endereço encontrado.</div>';
-      setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
       return;
     }
-    let html = '<h4 style="margin:10px 0;color:#333;">Escolha o endereço correto:</h4>';
+    let html = '<h4 style="margin:10px 0;color:#333;">Escolha o ponto de partida:</h4>';
     results.forEach((res, i) => {
-      const addr = res.address || {};
-      const street = addr.road || '';
-      const number = addr.house_number || '';
-      const neighborhood = addr.suburb || addr.neighbourhood || addr.city_district || '—';
-      const postcode = addr.postcode || '';
-      const city = addr.city || userLocation.city;
-      const display = `${street}${number ? ', ' + number : ''} – ${neighborhood}${postcode ? ' (CEP: ' + postcode + ')' : ''}`;
-      html += `<div class="address-item suggestion-item" onclick="selectDepartureSuggestion(${i})"><div style="font-size:14px;">${display}</div><small style="color:#666;">${city}, ${userLocation.state}</small></div>`;
+      html += `<div class="address-item suggestion-item" onclick="selectDepartureSuggestion(${i})"><div>${res.display_name}</div></div>`;
     });
     suggestionsContainer.innerHTML = html;
     window.pendingDepartureSuggestions = results;
-  } catch (e) {
-    suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>';
-    setTimeout(() => suggestionsContainer.style.display = 'none', 4000);
-  }
+  } catch (e) { suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>'; }
 }
 
 function selectDepartureSuggestion(index) {
   const result = window.pendingDepartureSuggestions?.[index];
   if (!result) return;
-  const addr = result.address || {};
-  let displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}`;
-  if (addr.neighbourhood) displayText += `, ${addr.neighbourhood}`;
-  if (addr.suburb) displayText += `, ${addr.suburb}`;
-  if (addr.city) displayText += `, ${addr.city}`;
-  if (addr.state) displayText += `, ${addr.state}`;
-  if (!displayText) displayText = result.display_name;
-  departure = { text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon), display_name: result.display_name } };
+  departure = { text: result.display_name, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon) } };
   document.getElementById('departure-input').value = '';
   document.getElementById('departure-display').textContent = departure.text;
   document.getElementById('departure-suggestions').style.display = 'none';
-  showStatus('Ponto de partida adicionado!', 'success');
+  showStatus('Partida definida!', 'success');
 }
+
 function normalizeCoords(coords) {
   if (!coords) return null;
-
   const lat = Number(coords.lat);
   const lon = Number(coords.lon);
-
   if (isNaN(lat) || isNaN(lon)) return null;
-
   return { lat, lon };
 }
 
+async function geocodeAddressFull(address) {
+  let full = address + ', Brasil';
+  if (userLocation) full = `${address}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
+  let coords = await geocodeBasic(full);
+  if (coords) return coords;
+  if (userLocation) {
+    const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
+    coords = await geocodeBasic(fallback);
+    if (coords) return coords;
+  }
+  return null;
+}
+
 async function optimizeRoute() {
-  if (!departure || addresses.length === 0) {
-    return showStatus('Defina partida e destinos.', 'warning');
-  }
-
-  // 🔥 GARANTIA ABSOLUTA DE COORDENADAS
-  const destinosValidos = [];
-
-  for (const addr of addresses) {
-    if (!addr.coords || !addr.coords.lat || !addr.coords.lon) {
-      const coords = await geocodeAddressFull(addr.text);
-      if (coords) {
-        addr.coords = coords;
-        destinosValidos.push(addr);
-      }
-    } else {
-      destinosValidos.push(addr);
-    }
-  }
-
-  if (destinosValidos.length === 0) {
-    return showStatus('Nenhum destino com coordenadas válidas.', 'warning');
-  }
-
+  if (!departure || addresses.length === 0) return showStatus('Defina partida e destinos.', 'warning');
   const btn = document.getElementById('optimize-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Otimizando...';
-
   try {
-    let optimized = await optimizeRouteNearestNeighbor(departure, destinosValidos);
-
-    if (optimized.length > 3) {
-      optimized = await twoOptImprovement(optimized, departure);
+    const destinosValidos = [];
+    for (const addr of addresses) {
+      if (!addr.coords || !addr.coords.lat || !addr.coords.lon) {
+        const coords = await geocodeAddressFull(addr.text);
+        if (coords) { addr.coords = coords; destinosValidos.push(addr); }
+      } else { destinosValidos.push(addr); }
     }
-
+    if (destinosValidos.length === 0) return showStatus('Nenhum destino válido.', 'warning');
+    let optimized = await optimizeRouteNearestNeighbor(departure, destinosValidos);
+    if (optimized.length > 3) optimized = await twoOptImprovement(optimized, departure);
     optimizedRoute = [{ ...departure, completed: true }, ...optimized];
     activeIndex = 1;
-
     document.getElementById('add-section').style.display = 'none';
     document.getElementById('route-section').style.display = 'block';
-
+    btn.style.display = 'none';
     await renderRoute();
-    showStatus('Rota otimizada com sucesso!', 'success');
-
-  } catch (e) {
-    console.error(e);
-    showStatus('Erro ao otimizar rota.', 'warning');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = 'Otimizar Rota';
-  }
+    showStatus('Rota otimizada!', 'success');
+  } catch (e) { console.error(e); showStatus('Erro ao otimizar.', 'warning'); }
+  finally { btn.disabled = false; btn.innerHTML = 'Otimizar Rota'; }
 }
 
 function renderAddressList() {
   const list = document.getElementById('address-list');
-  if (addresses.length === 0) {
-    list.innerHTML = '';
-    return;
-  }
+  if (addresses.length === 0) { list.innerHTML = ''; return; }
   let html = '';
   addresses.forEach((addr, i) => {
     html += `<div class="address-item">
@@ -669,14 +536,8 @@ function editAddress(id) {
   (async () => {
     showStatus('Atualizando...', 'info');
     const coords = await geocodeBasic(newText.trim());
-    if (coords) {
-      addr.text = newText.trim();
-      addr.coords = coords;
-      renderAddressList();
-      showStatus('Atualizado!', 'success');
-    } else {
-      showStatus('Não localizado.', 'warning');
-    }
+    if (coords) { addr.text = newText.trim(); addr.coords = coords; renderAddressList(); showStatus('Atualizado!', 'success'); }
+    else { showStatus('Não localizado.', 'warning'); }
   })();
 }
 
@@ -694,13 +555,10 @@ async function renderRoute() {
     }
     html += `<div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
       <div class="route-header">
-        <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">${concluido ? '✓' : i === 0 ? '' : i}</div>
-        <div class="route-text">
-          <strong>${i === 0 ? 'Ponto de Partida' : a.text}</strong>${distInfo}
-        </div>
+        <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">${concluido ? '✓' : i === 0 ? 'P' : i}</div>
+        <div class="route-text"><strong>${i === 0 ? 'Ponto de Partida' : a.text}</strong>${distInfo}</div>
       </div>
-      ${ativo && !concluido ? `
-        <div class="route-buttons">
+      ${ativo && !concluido ? `<div class="route-buttons">
           <button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">Maps</button>
           <button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">Waze</button>
           <button class="btn btn-complete btn-small" onclick="markCompleted(${i})">✓</button>
@@ -714,25 +572,8 @@ async function renderRoute() {
 function openMaps(i, app) {
   const a = optimizedRoute[i];
   const { lat, lon } = a.coords || {};
-  if (app === 'google') {
-    window.open(lat && lon ? `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.text)}`, '_blank');
-  } else if (app === 'waze') {
-    if (lat && lon) {
-      const wazeUrl = `waze://?ll=${lat},${lon}&navigate=yes`;
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = wazeUrl;
-      document.body.appendChild(iframe);
-      setTimeout(() => {
-        document.body.removeChild(iframe);
-        if (document.hasFocus()) {
-          window.open(`https://www.waze.com/ul?ll=${lat},${lon}&navigate=yes`, '_blank');
-        }
-      }, 2000);
-    } else {
-      window.open(`https://www.waze.com/ul?q=${encodeURIComponent(a.text)}`, '_blank');
-    }
-  }
+  if (app === 'google') window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`, '_blank');
+  else if (app === 'waze') window.open(`https://www.waze.com/ul?ll=${lat},${lon}&navigate=yes`, '_blank');
 }
 
 function markCompleted(i) {
@@ -748,8 +589,7 @@ function updateProgress() {
 }
 
 function resetRoute() {
-  optimizedRoute = []; activeIndex = 0; addresses = []; departure = null; userLocation = null; distanceCache.clear();
-  document.getElementById('base-location-section').style.display = 'block';
+  optimizedRoute = []; activeIndex = 0; addresses = []; departure = null; distanceCache.clear();
   document.getElementById('departure-section').style.display = 'none';
   document.getElementById('add-section').style.display = 'block';
   document.getElementById('route-section').style.display = 'none';
@@ -761,8 +601,6 @@ function resetRoute() {
   document.getElementById('departure-input').value = '';
   document.getElementById('departure-display').textContent = 'Nenhum ponto de partida definido.';
   document.getElementById('address-input').value = '';
-  document.getElementById('suggestions-container').style.display = 'none';
-  document.getElementById('departure-suggestions').style.display = 'none';
   stopCamera();
 }
 
@@ -776,30 +614,12 @@ function startVoice() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const recognition = new SpeechRecognition();
   recognition.lang = 'pt-BR';
-  recognition.interimResults = false;
   const btn = document.getElementById('voice-btn');
   btn.disabled = true;
-  recognition.onstart = () => {
-    isListening = true;
-    btn.classList.add('listening');
-    btn.textContent = 'Ouvindo...';
-    showStatus('Fale o endereço...', 'info');
-  };
-  recognition.onend = () => {
-    isListening = false;
-    btn.classList.remove('listening');
-    btn.textContent = 'Voz';
-    btn.disabled = false;
-  };
-  recognition.onresult = (e) => {
-    const t = e.results[0][0].transcript.trim();
-    document.getElementById('address-input').value = t;
-    addAddress();
-  };
-  recognition.onerror = (e) => {
-    showStatus('Erro: ' + e.error, 'warning');
-    recognition.onend();
-  };
+  recognition.onstart = () => { btn.classList.add('listening'); btn.textContent = 'Ouvindo...'; showStatus('Fale o endereço...', 'info'); };
+  recognition.onend = () => { btn.classList.remove('listening'); btn.textContent = 'Voz'; btn.disabled = false; };
+  recognition.onresult = (e) => { document.getElementById('address-input').value = e.results[0][0].transcript.trim(); addAddress(); };
+  recognition.onerror = (e) => { showStatus('Erro: ' + e.error, 'warning'); };
   recognition.start();
 }
 
@@ -807,21 +627,16 @@ async function requestCameraPermissionAndStart(mode) {
   if (!userLocation) return showStatus('Defina localização base.', 'warning');
   isPhotoMode = mode === 'photo';
   scannerType = isPhotoMode ? null : mode;
-  let buttonsHTML = isPhotoMode ?
-    `<button class="btn btn-capture" onclick="captureImage()">Capturar Foto</button>` :
-    `<button class="btn btn-capture" onclick="captureForScan()">Capturar Frame</button>`;
+  let buttonsHTML = isPhotoMode ? `<button class="btn btn-capture" onclick="captureImage()">Capturar Foto</button>` : `<button class="btn btn-capture" onclick="captureForScan()">Capturar Frame</button>`;
   buttonsHTML += `<button class="btn btn-cancel" onclick="stopCamera()">Cancelar</button>`;
   document.getElementById('camera-buttons').innerHTML = buttonsHTML;
   await startCamera();
 }
 
 let scanInterval = null;
-
 async function startCamera() {
   try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-    });
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
     const video = document.getElementById('camera-video');
     video.srcObject = cameraStream;
     document.getElementById('camera-container').style.display = 'block';
@@ -830,55 +645,35 @@ async function startCamera() {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       scanInterval = setInterval(() => {
-        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
+        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+          canvas.width = video.videoWidth; canvas.height = video.videoHeight;
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           if (scannerType === 'qr') {
             const code = jsQR(imageData.data, canvas.width, canvas.height);
-            if (code) {
-              handleScannedCode(code.data);
-              clearInterval(scanInterval);
-              stopCamera();
-            }
+            if (code) { handleScannedCode(code.data); clearInterval(scanInterval); stopCamera(); }
           }
         }
       }, 500);
     }
-  } catch (e) {
-    showStatus('Erro na câmera.', 'warning');
-  }
+  } catch (e) { showStatus('Erro na câmera.', 'warning'); }
 }
 
 async function captureForScan() {
   const video = document.getElementById('camera-video');
   if (video.videoWidth === 0) return;
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   if (scannerType === 'qr') {
     const code = jsQR(imageData.data, canvas.width, canvas.height);
-    if (code) {
-      handleScannedCode(code.data);
-      stopCamera();
-      return;
-    }
+    if (code) { handleScannedCode(code.data); stopCamera(); return; }
   } else if (scannerType === 'barcode') {
-    Quagga.decodeSingle({
-      decoder: { readers: ['code_128_reader', 'ean_reader', 'code_39_reader'] },
-      locate: true,
-      src: canvas.toDataURL('image/png')
-    }, (result) => {
-      if (result?.codeResult) {
-        handleScannedCode(result.codeResult.code);
-        stopCamera();
-      } else {
-        showStatus('Não detectado.', 'warning');
-      }
+    Quagga.decodeSingle({ decoder: { readers: ['code_128_reader', 'ean_reader', 'code_39_reader'] }, locate: true, src: canvas.toDataURL('image/png') }, (result) => {
+      if (result?.codeResult) { handleScannedCode(result.codeResult.code); stopCamera(); }
+      else { showStatus('Não detectado.', 'warning'); }
     });
     return;
   }
@@ -894,44 +689,30 @@ function stopCamera() {
 async function captureImage() {
   const video = document.getElementById('camera-video');
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
   canvas.getContext('2d').drawImage(video, 0, 0);
   showStatus('Extraindo texto...', 'info');
   try {
     const result = await Tesseract.recognize(canvas.toDataURL('image/png'), 'por');
     document.getElementById('address-input').value = result.data.text.trim().replace(/\n/g, ' ');
     addAddress();
-  } catch (err) {
-    showStatus('Erro no OCR.', 'warning');
-  }
+  } catch (err) { showStatus('Erro no OCR.', 'warning'); }
   stopCamera();
 }
 
-function handleScannedCode(code) {
-  document.getElementById('address-input').value = code;
-  addAddress();
-}
-
-function addUserLocationManually() {
-  showStatus('Use o botão em “Ponto de Partida”.', 'info');
-}
-
+function handleScannedCode(code) { document.getElementById('address-input').value = code; addAddress(); }
+function addUserLocationManually() { showStatus('Use o botão em “Ponto de Partida”.', 'info'); }
 function showStatus(message, type = 'info') {
   const c = document.getElementById('status-container');
   const cls = type === 'success' ? 'status-success' : type === 'warning' ? 'status-warning' : 'status-info';
   c.innerHTML = `<div class="status-bar ${cls}">${message}</div>`;
   if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
 }
-
-function uploadPdf() {
-  document.getElementById('pdf-upload').click();
-}
-
+function uploadPdf() { document.getElementById('pdf-upload').click(); }
 async function processPdf(e) {
   const file = e.target.files[0];
   if (!file) return;
-  showStatus('Lendo PDF (Otimizado)...', 'info');
+  showStatus('Lendo PDF...', 'info');
   try {
     const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
     let fullText = '';
@@ -942,41 +723,18 @@ async function processPdf(e) {
     }
     const pattern = /Endereço:\s*(.+?),\s*(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
     const matches = [...fullText.matchAll(pattern)];
-    if (matches.length === 0) {
-      showStatus('Nenhum endereço encontrado.', 'warning');
-      return;
-    }
-    showStatus(`Processando ${matches.length} endereços...`, 'info');
+    if (matches.length === 0) return showStatus('Nenhum endereço encontrado.', 'warning');
     for (const m of matches) {
       const addr = `${m[1].trim()}, ${m[2].trim()}, CEP: ${m[3]}-${m[4]}`;
       const coords = await geocodeBasic(addr);
       addresses.push({ id: Date.now() + Math.random(), text: addr, coords: coords || null, completed: false });
-      await new Promise(r => setTimeout(r, 300));
     }
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
     showStatus(`${matches.length} endereços adicionados!`, 'success');
-  } catch (err) {
-    console.error('Erro no PDF:', err);
-    showStatus('Erro no PDF.', 'warning');
-  } finally {
-    e.target.value = '';
-  }
+  } catch (err) { showStatus('Erro no PDF.', 'warning'); }
+  finally { e.target.value = ''; }
 }
-
-async function geocodeAddressFull(address) {
-  let full = address + ', Brasil';
-  if (userLocation) full = `${address}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
-  let coords = await geocodeBasic(full);
-  if (coords) return coords;
-  if (userLocation) {
-    const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
-    coords = await geocodeBasic(fallback);
-    if (coords) return coords;
-  }
-  return null;
-}
-
 function deleteAddress(id) {
   addresses = addresses.filter(a => a.id !== id);
   renderAddressList();
