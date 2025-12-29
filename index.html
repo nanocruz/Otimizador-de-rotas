@@ -237,7 +237,7 @@ async function processCEP(text) {
     if (!coords) coords = await geocodeBasic(`${data.localidade}, ${data.uf}, Brasil`);
     if (!coords) throw new Error('Coordenadas não encontradas');
     showStatus('CEP encontrado!', 'success');
-    return { success: true, address: addressText, coords };
+    return { success: true, address: addressText, coords, cep: cep };
   } catch (e) {
     showStatus('CEP inválido: ' + e.message, 'warning');
     return { success: false };
@@ -294,74 +294,72 @@ async function calculateDistanceMatrix(points) {
   return matrix;
 }
 
+
 async function optimizeRouteSmart(start, targets) {
-  const allPoints = [start, ...targets];
-  const n = allPoints.length;
+  // 1. Agrupar alvos por CEP (primeiros 5 dígitos para setorização)
+  const groups = {};
+  for (const target of targets) {
+    const cep = target.cep || "99999999";
+    const sector = cep.substring(0, 5);
+    if (!groups[sector]) groups[sector] = [];
+    groups[sector].push(target);
+  }
+
+  // 2. Ordenar os setores (CEPs) de forma crescente
+  const sortedSectors = Object.keys(groups).sort();
   
-  // Pré-calcula a matriz de distâncias para evitar await dentro dos loops de otimização
-  const matrix = await calculateDistanceMatrix(allPoints);
-  
-  // Algoritmo de Construção: Inserção Mais Próxima (melhor que Nearest Neighbor)
-  let tour = [0]; // Começa no ponto de partida
-  let unvisited = Array.from({length: n - 1}, (_, i) => i + 1);
-  
-  while (unvisited.length > 0) {
-    let bestDist = Infinity;
-    let bestPointIdx = -1;
-    let insertPos = -1;
+  let finalRoute = [];
+  let currentStart = start;
+
+  // 3. Para cada setor, otimizar o percurso interno
+  for (const sector of sortedSectors) {
+    const sectorTargets = groups[sector];
     
-    for (let i = 0; i < unvisited.length; i++) {
-      const u = unvisited[i];
-      for (let j = 0; j < tour.length; j++) {
-        const curr = tour[j];
-        const next = tour[(j + 1) % tour.length];
-        
-        // Custo de inserção: d(curr, u) + d(u, next) - d(curr, next)
-        const dist = matrix[curr][u].distance + (j === tour.length - 1 ? 0 : matrix[u][next].distance - matrix[curr][next].distance);
-        
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestPointIdx = i;
-          insertPos = j + 1;
+    // Se houver apenas um no setor, adiciona direto
+    if (sectorTargets.length === 1) {
+      finalRoute.push(sectorTargets[0]);
+      currentStart = sectorTargets[0];
+      continue;
+    }
+
+    // Otimização local dentro do setor usando a lógica anterior
+    const sectorPoints = [currentStart, ...sectorTargets];
+    const matrix = await calculateDistanceMatrix(sectorPoints);
+    
+    // Algoritmo de Inserção para o setor
+    let tour = [0];
+    let unvisited = Array.from({length: sectorPoints.length - 1}, (_, i) => i + 1);
+    
+    while (unvisited.length > 0) {
+      let bestDist = Infinity;
+      let bestPointIdx = -1;
+      let insertPos = -1;
+      for (let i = 0; i < unvisited.length; i++) {
+        const u = unvisited[i];
+        for (let j = 0; j < tour.length; j++) {
+          const curr = tour[j];
+          const next = tour[(j + 1) % tour.length];
+          const dist = matrix[curr][u].distance + (j === tour.length - 1 ? 0 : matrix[u][next].distance - matrix[curr][next].distance);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestPointIdx = i;
+            insertPos = j + 1;
+          }
         }
       }
+      tour.splice(insertPos, 0, unvisited[bestPointIdx]);
+      unvisited.splice(bestPointIdx, 1);
     }
-    
-    tour.splice(insertPos, 0, unvisited[bestPointIdx]);
-    unvisited.splice(bestPointIdx, 1);
+
+    // Adiciona os pontos otimizados do setor à rota final
+    const optimizedSector = tour.slice(1).map(idx => sectorPoints[idx]);
+    finalRoute.push(...optimizedSector);
+    currentStart = optimizedSector[optimizedSector.length - 1];
   }
-  
-  // Refinamento com 2-opt (Síncrono e Rápido)
-  let improved = true;
-  while (improved) {
-    improved = false;
-    for (let i = 1; i < n - 1; i++) {
-      for (let j = i + 1; j < n; j++) {
-        // Posições: i-1, i ... j, j+1
-        const p1 = tour[i-1];
-        const p2 = tour[i];
-        const p3 = tour[j];
-        const p4 = (j + 1 < n) ? tour[j+1] : -1;
-        
-        let currentDist = matrix[p1][p2].distance;
-        if (p4 !== -1) currentDist += matrix[p3][p4].distance;
-        
-        let newDist = matrix[p1][p3].distance;
-        if (p4 !== -1) newDist += matrix[p2][p4].distance;
-        
-        if (newDist < currentDist - 0.0001) { // Pequena margem de precisão
-          // Inverte o segmento de i a j
-          const segment = tour.slice(i, j + 1).reverse();
-          tour.splice(i, segment.length, ...segment);
-          improved = true;
-        }
-      }
-    }
-  }
-  
-  // Converte índices de volta para objetos, removendo o ponto de partida (índice 0)
-  return tour.slice(1).map(idx => allPoints[idx]);
+
+  return finalRoute;
 }
+
 
 
 async function addAddress() {
@@ -373,7 +371,7 @@ async function addAddress() {
   const cepResult = await processCEP(text);
   if (cepResult?.success) {
     if (cepResult.coords && typeof cepResult.coords.lat === 'number' && !isNaN(cepResult.coords.lat)) {
-      addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, completed: false });
+      addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, cep: cepResult.cep, completed: false });
       input.value = '';
       renderAddressList();
       document.getElementById('optimize-btn').style.display = 'block';
@@ -427,7 +425,9 @@ function selectSuggestion(index) {
   if (!result) return;
   const addr = result.address || {};
   let displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}, ${addr.suburb || ''}, ${addr.city || ''}`;
-  addresses.push({ id: Date.now(), text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon) }, completed: false });
+  const cepMatch = result.display_name.match(/\d{5}-?\d{3}/);
+  const extractedCep = cepMatch ? cepMatch[0].replace("-", "") : "99999999";
+  addresses.push({ id: Date.now(), text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon) }, cep: extractedCep, completed: false });
   document.getElementById('address-input').value = '';
   renderAddressList();
   document.getElementById('optimize-btn').style.display = 'block';
