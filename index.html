@@ -591,98 +591,55 @@ function normalizeCoords(coords) {
 }
 
 async function optimizeRoute() {
-  departure.coords = normalizeCoords(departure.coords);
-
-if (!departure.coords) {
-  return showStatus('Ponto de partida sem coordenadas válidas.', 'warning');
-}
-
-  if (!departure || !departure.coords || addresses.length === 0) {
-    return showStatus('Define a departure point and valid destinations.', 'warning');
+  if (!departure || addresses.length === 0) {
+    return showStatus('Defina partida e destinos.', 'warning');
   }
 
-  // 🔹 Filter only valid destinations
-const validAddresses = addresses
-  .map(a => {
-    const normalized = normalizeCoords(a.coords);
-    return normalized ? { ...a, coords: normalized } : null;
-  })
-  .filter(Boolean);
+  // 🔥 GARANTIA ABSOLUTA DE COORDENADAS
+  const destinosValidos = [];
 
-  if (validAddresses.length === 0) {
-    return showStatus('No valid destinations with coordinates.', 'warning');
+  for (const addr of addresses) {
+    if (!addr.coords || !addr.coords.lat || !addr.coords.lon) {
+      const coords = await geocodeAddressFull(addr.text);
+      if (coords) {
+        addr.coords = coords;
+        destinosValidos.push(addr);
+      }
+    } else {
+      destinosValidos.push(addr);
+    }
+  }
+
+  if (destinosValidos.length === 0) {
+    return showStatus('Nenhum destino com coordenadas válidas.', 'warning');
   }
 
   const btn = document.getElementById('optimize-btn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Optimizing...';
+  btn.innerHTML = '<span class="spinner"></span> Otimizando...';
 
   try {
-    showStatus('Calculating fastest and shortest route...', 'info');
+    let optimized = await optimizeRouteNearestNeighbor(departure, destinosValidos);
 
-    const remaining = [...validAddresses];
-    const route = [];
-
-    let currentCoords = departure.coords;
-
-    while (remaining.length > 0) {
-      let nearestIndex = -1;
-      let minDistance = Infinity;
-
-      const distances = await Promise.all(
-        remaining.map(dest =>
-          calculateRealDistance(currentCoords, dest.coords)
-        )
-      );
-
-      for (let i = 0; i < distances.length; i++) {
-        if (distances[i].distance < minDistance) {
-          minDistance = distances[i].distance;
-          nearestIndex = i;
-        }
-      }
-
-      const next = remaining.splice(nearestIndex, 1)[0];
-      route.push(next);
-      currentCoords = next.coords;
+    if (optimized.length > 3) {
+      optimized = await twoOptImprovement(optimized, departure);
     }
 
-    // 🔹 Totals
-    let totalDistance = 0;
-    let totalDuration = 0;
-    let prevCoords = departure.coords;
-
-    for (const dest of route) {
-      const { distance, duration } =
-        await calculateRealDistance(prevCoords, dest.coords);
-
-      totalDistance += distance;
-      totalDuration += duration;
-      prevCoords = dest.coords;
-    }
-
-    optimizedRoute = [
-      { ...departure, completed: true },
-      ...route.map(r => ({ ...r, completed: false }))
-    ];
-
+    optimizedRoute = [{ ...departure, completed: true }, ...optimized];
     activeIndex = 1;
 
     document.getElementById('add-section').style.display = 'none';
     document.getElementById('route-section').style.display = 'block';
 
     await renderRoute();
+    showStatus('Rota otimizada com sucesso!', 'success');
 
-    showStatus(
-      `Route optimized: ${(totalDistance / 1000).toFixed(1)} km · ~${Math.round(totalDuration / 60)} min`,
-      'success'
-    );
   } catch (e) {
-    console.error('Optimization error:', e);
-    showStatus('Optimization failed.', 'warning');
+    console.error(e);
+    showStatus('Erro ao otimizar rota.', 'warning');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = 'Optimize Route';
+    btn.innerHTML = 'Otimizar Rota';
   }
 }
 
