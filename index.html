@@ -295,70 +295,54 @@ async function calculateDistanceMatrix(points) {
 }
 
 
-async function optimizeRouteSmart(start, targets) {
-  // 1. Agrupar alvos por CEP (primeiros 5 dígitos para setorização)
-  const groups = {};
-  for (const target of targets) {
-    const cep = target.cep || "99999999";
-    const sector = cep.substring(0, 5);
-    if (!groups[sector]) groups[sector] = [];
-    groups[sector].push(target);
-  }
 
-  // 2. Ordenar os setores (CEPs) de forma crescente
-  const sortedSectors = Object.keys(groups).sort();
+async function optimizeRouteSmart(start, targets) {
+  // 1. Preparar os dados (garantir que todos tenham CEP e número)
+  const preparedTargets = targets.map(t => {
+    if (t.number === undefined) {
+      const m = t.text.match(/, (\d+)/);
+      t.number = m ? parseInt(m[1]) : 0;
+    }
+    if (!t.cep) {
+      const m = t.text.match(/\d{5}-?\d{3}/);
+      t.cep = m ? m[0].replace("-", "") : "99999999";
+    }
+    return t;
+  });
+
+  // 2. Agrupar por CEP completo
+  const groups = {};
+  preparedTargets.forEach(t => {
+    if (!groups[t.cep]) groups[t.cep] = [];
+    groups[t.cep].push(t);
+  });
+
+  // 3. Ordenar os CEPs de forma crescente
+  const sortedCeps = Object.keys(groups).sort();
   
   let finalRoute = [];
-  let currentStart = start;
+  let currentPos = start.coords;
 
-  // 3. Para cada setor, otimizar o percurso interno
-  for (const sector of sortedSectors) {
-    const sectorTargets = groups[sector];
+  for (const cep of sortedCeps) {
+    let sectorTargets = groups[cep];
     
-    // Se houver apenas um no setor, adiciona direto
-    if (sectorTargets.length === 1) {
-      finalRoute.push(sectorTargets[0]);
-      currentStart = sectorTargets[0];
-      continue;
-    }
-
-    // Otimização local dentro do setor usando a lógica anterior
-    const sectorPoints = [currentStart, ...sectorTargets];
-    const matrix = await calculateDistanceMatrix(sectorPoints);
+    // 4. Dentro do mesmo CEP, ordenar por número
+    // Decidir se ordem crescente ou decrescente baseada na proximidade do primeiro/último número ao ponto atual
+    const sortedAsc = [...sectorTargets].sort((a, b) => a.number - b.number);
+    const sortedDesc = [...sectorTargets].sort((a, b) => b.number - a.number);
     
-    // Algoritmo de Inserção para o setor
-    let tour = [0];
-    let unvisited = Array.from({length: sectorPoints.length - 1}, (_, i) => i + 1);
+    const distToFirst = Math.hypot(currentPos.lat - sortedAsc[0].coords.lat, currentPos.lon - sortedAsc[0].coords.lon);
+    const distToLast = Math.hypot(currentPos.lat - sortedDesc[0].coords.lat, currentPos.lon - sortedDesc[0].coords.lon);
     
-    while (unvisited.length > 0) {
-      let bestDist = Infinity;
-      let bestPointIdx = -1;
-      let insertPos = -1;
-      for (let i = 0; i < unvisited.length; i++) {
-        const u = unvisited[i];
-        for (let j = 0; j < tour.length; j++) {
-          const curr = tour[j];
-          const next = tour[(j + 1) % tour.length];
-          const dist = matrix[curr][u].distance + (j === tour.length - 1 ? 0 : matrix[u][next].distance - matrix[curr][next].distance);
-          if (dist < bestDist) {
-            bestDist = dist;
-            bestPointIdx = i;
-            insertPos = j + 1;
-          }
-        }
-      }
-      tour.splice(insertPos, 0, unvisited[bestPointIdx]);
-      unvisited.splice(bestPointIdx, 1);
-    }
-
-    // Adiciona os pontos otimizados do setor à rota final
-    const optimizedSector = tour.slice(1).map(idx => sectorPoints[idx]);
-    finalRoute.push(...optimizedSector);
-    currentStart = optimizedSector[optimizedSector.length - 1];
+    const bestSectorOrder = distToFirst <= distToLast ? sortedAsc : sortedDesc;
+    
+    finalRoute.push(...bestSectorOrder);
+    currentPos = bestSectorOrder[bestSectorOrder.length - 1].coords;
   }
 
   return finalRoute;
 }
+
 
 
 
@@ -371,7 +355,9 @@ async function addAddress() {
   const cepResult = await processCEP(text);
   if (cepResult?.success) {
     if (cepResult.coords && typeof cepResult.coords.lat === 'number' && !isNaN(cepResult.coords.lat)) {
-      addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, cep: cepResult.cep, completed: false });
+      const numMatch = cepResult.address.match(/, (\d+)/);
+      const houseNumber = numMatch ? parseInt(numMatch[1]) : 0;
+      addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, cep: cepResult.cep, number: houseNumber, completed: false });
       input.value = '';
       renderAddressList();
       document.getElementById('optimize-btn').style.display = 'block';
@@ -427,7 +413,9 @@ function selectSuggestion(index) {
   let displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}, ${addr.suburb || ''}, ${addr.city || ''}`;
   const cepMatch = result.display_name.match(/\d{5}-?\d{3}/);
   const extractedCep = cepMatch ? cepMatch[0].replace("-", "") : "99999999";
-  addresses.push({ id: Date.now(), text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon) }, cep: extractedCep, completed: false });
+  const numMatch = displayText.match(/, (\d+)/);
+  const houseNumber = numMatch ? parseInt(numMatch[1]) : 0;
+  addresses.push({ id: Date.now(), text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon) }, cep: extractedCep, number: houseNumber, completed: false });
   document.getElementById('address-input').value = '';
   renderAddressList();
   document.getElementById('optimize-btn').style.display = 'block';
