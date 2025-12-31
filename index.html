@@ -301,9 +301,8 @@ function parseAddress(text) {
   const numeroStr = parts[1]?.trim() || '0';
   const numero = parseInt(numeroStr.replace(/\D/g, ''), 10) || 0;
   const cepMatch = text.match(/CEP[:\s]*(\d{5})-?(\d{3})/i);
-  const cepFull = cepMatch ? cepMatch[1] + cepMatch[2] : '00000000';
-  const cepPrefix = cepFull.slice(0, 5); // Prefixo para agrupar por bairro
-  return { rua: ruaParte, numero, cepFull, cepPrefix, text };
+  const cep = cepMatch ? cepMatch[1] + cepMatch[2] : '00000000';
+  return { rua: ruaParte, numero, cep, text };
 }
 
 function calculateGroupCenter(group) {
@@ -312,26 +311,72 @@ function calculateGroupCenter(group) {
   return { lat: sum.lat / group.length, lon: sum.lon / group.length };
 }
 
-// NOVA FUNÇÃO DE OTIMIZAÇÃO (com agrupamento por CEP primeiro)
+// Ajuste em calculateRealDistance para evitar 0.0km
+async function calculateRealDistance(from, to) {
+  if (!from || !to || typeof from.lat !== 'number' || typeof from.lon !== 'number' || typeof to.lat !== 'number' || typeof to.lon !== 'number') {
+    return { distance: Number.POSITIVE_INFINITY, duration: Number.POSITIVE_INFINITY };
+  }
+  const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
+  if (distanceCache.has(key)) return distanceCache.get(key);
+  try {
+    const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
+    const resp = await fetch(url, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)' } });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data?.code === 'Ok' && data.routes?.length > 0) {
+        let result = { distance: data.routes[0].distance, duration: data.routes[0].duration };
+        if (result.distance === 0) { // Fallback se routing der 0
+          result = haversineFallback(from, to);
+        }
+        distanceCache.set(key, result);
+        return result;
+      }
+    }
+  } catch (err) { console.warn('Roteamento falhou, usando Haversine.', err); }
+  const result = haversineFallback(from, to);
+  distanceCache.set(key, result);
+  return result;
+}
+
+// Helper para Haversine com ajuste
+function haversineFallback(from, to) {
+  const R = 6371000;
+  const φ1 = from.lat * Math.PI / 180;
+  const φ2 = to.lat * Math.PI / 180;
+  const Δφ = (to.lat - from.lat) * Math.PI / 180;
+  const Δλ = (to.lon - from.lon) * Math.PI / 180;
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  let distance = R * c;
+  if (distance === 0) distance = 10; // Mínimo 10m se zero
+  const duration = distance / 13.89;
+  return { distance, duration };
+}
+
+// NOVA FUNÇÃO DE OTIMIZAÇÃO (agrupando por CEP completo)
 async function optimizeRouteSmart(start, targets) {
   if (targets.length === 0) return [];
 
-  // Parse e valida coordenadas
+  // Parse e valida
   const validTargets = targets
     .map(t => ({ ...t, parsed: parseAddress(t.text) }))
     .filter(t => t.coords && t.coords.lat && t.coords.lon);
 
-  // 1. Agrupar por prefixo de CEP (bairro/região) - resolve 30% como você disse
+  console.log('Targets válidos:', validTargets); // Depuração
+
+  // 1. Agrupar por CEP completo
   const groupsByCep = new Map();
   for (const t of validTargets) {
-    const key = t.parsed.cepPrefix;
+    const key = t.parsed.cep;
     if (!groupsByCep.has(key)) groupsByCep.set(key, []);
     groupsByCep.get(key).push(t);
   }
 
-  // Dentro de cada grupo CEP, sub-agrupar por rua
-  const cepGroups = Array.from(groupsByCep.values());
-  for (const cepGroup of cepGroups) {
+  let cepGroups = Array.from(groupsByCep.values());
+
+  // Dentro de cada grupo CEP, sub-agrupar por rua e ordenar
+  for (let i = 0; i < cepGroups.length; i++) {
+    const cepGroup = cepGroups[i];
     const subGroupsByStreet = new Map();
     for (const t of cepGroup) {
       const key = t.parsed.rua.toLowerCase();
@@ -339,62 +384,56 @@ async function optimizeRouteSmart(start, targets) {
       subGroupsByStreet.get(key).push(t);
     }
 
-    // Ordenar sub-grupos (ruas) dentro do CEP
     const subGroups = Array.from(subGroupsByStreet.values());
 
-    // Ordenar dentro de cada sub-grupo (rua): par crescente + ímpar decrescente
+    // Ordenar dentro de cada rua
     for (const subGroup of subGroups) {
       const pares = subGroup.filter(a => a.parsed.numero % 2 === 0).sort((a, b) => a.parsed.numero - b.parsed.numero);
       const impares = subGroup.filter(a => a.parsed.numero % 2 !== 0).sort((a, b) => b.parsed.numero - a.parsed.numero);
       subGroup.splice(0, subGroup.length, ...impares, ...pares);
     }
 
-    // Para o grupo CEP, ordenar as ruas (sub-grupos) baseado em proximidade interna
-    cepGroup.splice(0, cepGroup.length, ...await orderSubGroups(start.coords, subGroups));
+    // Ordenar ruas dentro do CEP
+    const orderedSub = await orderSubGroups(start.coords, subGroups);
+    cepGroups[i] = orderedSub;
   }
 
-  // 2. Ordenar os grupos CEP a partir do ponto de partida (escolhe o mais próximo primeiro)
+  console.log('Grupos por CEP:', cepGroups); // Depuração
+
+  // 2. Ordenar grupos CEP pelo mais próximo do start
   const route = [];
   let currentPos = start.coords;
-  let remainingGroups = [...cepGroups];
+  let remainingGroups = cepGroups.map(g => g.flat()); // Flatten para lista plana por CEP
 
   while (remainingGroups.length > 0) {
-    let closestGroupIndex = 0;
+    let closestIndex = 0;
     let closestDist = Infinity;
 
-    // Encontra o grupo CEP mais próximo pelo centro
     for (let i = 0; i < remainingGroups.length; i++) {
       const center = calculateGroupCenter(remainingGroups[i]);
       const { distance } = await calculateRealDistance(currentPos, center);
+      console.log(`Distância para grupo ${i}: ${distance}m`); // Depuração
       if (distance < closestDist) {
         closestDist = distance;
-        closestGroupIndex = i;
+        closestIndex = i;
       }
     }
 
-    const selectedGroup = remainingGroups.splice(closestGroupIndex, 1)[0];
+    const selected = remainingGroups.splice(closestIndex, 1)[0];
 
-    // Dentro do grupo CEP selecionado, decide direção: começa pela rua/endereço mais próximo
+    // Ajustar direção dentro do grupo
     let bestStartIdx = 0;
     let bestStartDist = Infinity;
-    for (let i = 0; i < selectedGroup.length; i++) {
-      const { distance } = await calculateRealDistance(currentPos, selectedGroup[i].coords);
+    for (let j = 0; j < selected.length; j++) {
+      const { distance } = await calculateRealDistance(currentPos, selected[j].coords);
       if (distance < bestStartDist) {
         bestStartDist = distance;
-        bestStartIdx = i;
+        bestStartIdx = j;
       }
     }
 
-    // Rotaciona o grupo para começar pelo mais próximo
-    const orderedGroup = [
-      ...selectedGroup.slice(bestStartIdx),
-      ...selectedGroup.slice(0, bestStartIdx)
-    ];
-
-    // Se entrar pelo "fim", inverte para manter lógica
-    if (bestStartIdx > selectedGroup.length / 2) {
-      orderedGroup.reverse();
-    }
+    let orderedGroup = [...selected.slice(bestStartIdx), ...selected.slice(0, bestStartIdx)];
+    if (bestStartIdx > selected.length / 2) orderedGroup.reverse();
 
     route.push(...orderedGroup);
     currentPos = orderedGroup[orderedGroup.length - 1].coords;
@@ -422,7 +461,7 @@ async function orderSubGroups(currentPos, subGroups) {
     ordered.push(...nextSub);
     currentPos = nextSub[nextSub.length - 1].coords;
   }
-  return ordered;
+  return ordered.flat();
 }
 
 async function addAddress() {
