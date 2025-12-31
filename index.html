@@ -341,45 +341,27 @@ async function optimizeRouteSmart(start, targets) {
   // Array de grupos em ordem de CEP (já vem ordenado porque validTargets foi ordenado)
   const cepGroups = Array.from(groupsByCep.values());
 
-  // 4. Percorrer os grupos de CEP na ordem “melhor próximo”,
-  //    mas respeitando a ordem interna (rua + número) já calculada
-  const route = [];
-  let currentPos = start.coords;
-  let remainingGroups = [...cepGroups];
+// 4. ROTA FINAL: vizinho mais próximo entre TODOS os pontos restantes ✅
+const route = [];
+let currentPos = start.coords;
+let allRemaining = validTargets.slice(); // Lista plana de TODOS os pontos
 
-  while (remainingGroups.length > 0) {
-    let closestIndex = 0;
-    let closestDist = Infinity;
+while (allRemaining.length > 0) {
+  let nearestIdx = 0;
+  let nearestDist = Infinity;
 
-    for (let i = 0; i < remainingGroups.length; i++) {
-      const center = calculateGroupCenter(remainingGroups[i]);
-      const { distance } = await calculateRealDistance(currentPos, center);
-      if (distance < closestDist) {
-        closestDist = distance;
-        closestIndex = i;
-      }
+  for (let i = 0; i < allRemaining.length; i++) {
+    const { distance } = await calculateRealDistance(currentPos, allRemaining[i].coords);
+    if (distance < nearestDist) {
+      nearestDist = distance;
+      nearestIdx = i;
     }
-
-    const selectedGroup = remainingGroups.splice(closestIndex, 1)[0];
-
-    // 5. Ajustar só o ponto de entrada no grupo (sem quebrar a ordem de número)
-    let bestStartIdx = 0;
-    let bestStartDist = Infinity;
-    for (let j = 0; j < selectedGroup.length; j++) {
-      const { distance } = await calculateRealDistance(currentPos, selectedGroup[j].coords);
-      if (distance < bestStartDist) {
-        bestStartDist = distance;
-        bestStartIdx = j;
-      }
-    }
-
-    // Gira o grupo para começar no ponto mais perto, mas mantém ordem crescente depois
-    const rotated = [...selectedGroup.slice(bestStartIdx), ...selectedGroup.slice(0, bestStartIdx)];
-
-    route.push(...rotated);
-    currentPos = rotated[rotated.length - 1].coords;
   }
 
+  const nextPoint = allRemaining.splice(nearestIdx, 1)[0];
+  route.push(nextPoint);
+  currentPos = nextPoint.coords;
+}
   return route;
 }
 
