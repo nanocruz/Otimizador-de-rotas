@@ -301,8 +301,9 @@ function parseAddress(text) {
   const numeroStr = parts[1]?.trim() || '0';
   const numero = parseInt(numeroStr.replace(/\D/g, ''), 10) || 0;
   const cepMatch = text.match(/CEP[:\s]*(\d{5})-?(\d{3})/i);
-  const cep = cepMatch ? cepMatch[1] + cepMatch[2] : '00000000';
-  return { rua: ruaParte, numero, cep, text };
+  const cepFull = cepMatch ? cepMatch[1] + cepMatch[2] : '00000000';
+  const cepPrefix = cepFull.slice(0, 5); // Prefixo para agrupar por bairro
+  return { rua: ruaParte, numero, cepFull, cepPrefix, text };
 }
 
 function calculateGroupCenter(group) {
@@ -311,7 +312,7 @@ function calculateGroupCenter(group) {
   return { lat: sum.lat / group.length, lon: sum.lon / group.length };
 }
 
-// NOVA FUNÇÃO DE OTIMIZAÇÃO (mais rápida e humana)
+// NOVA FUNÇÃO DE OTIMIZAÇÃO (com agrupamento por CEP primeiro)
 async function optimizeRouteSmart(start, targets) {
   if (targets.length === 0) return [];
 
@@ -320,33 +321,48 @@ async function optimizeRouteSmart(start, targets) {
     .map(t => ({ ...t, parsed: parseAddress(t.text) }))
     .filter(t => t.coords && t.coords.lat && t.coords.lon);
 
-  // 1. Agrupar por rua exata (prioridade máxima)
-  const groupsByStreet = new Map();
+  // 1. Agrupar por prefixo de CEP (bairro/região) - resolve 30% como você disse
+  const groupsByCep = new Map();
   for (const t of validTargets) {
-    const key = t.parsed.rua.toLowerCase();
-    if (!groupsByStreet.has(key)) groupsByStreet.set(key, []);
-    groupsByStreet.get(key).push(t);
+    const key = t.parsed.cepPrefix;
+    if (!groupsByCep.has(key)) groupsByCep.set(key, []);
+    groupsByCep.get(key).push(t);
   }
 
-  let groups = Array.from(groupsByStreet.values());
+  // Dentro de cada grupo CEP, sub-agrupar por rua
+  const cepGroups = Array.from(groupsByCep.values());
+  for (const cepGroup of cepGroups) {
+    const subGroupsByStreet = new Map();
+    for (const t of cepGroup) {
+      const key = t.parsed.rua.toLowerCase();
+      if (!subGroupsByStreet.has(key)) subGroupsByStreet.set(key, []);
+      subGroupsByStreet.get(key).push(t);
+    }
 
-  // 2. Ordenar dentro de cada grupo (par crescente + ímpar decrescente)
-  for (const group of groups) {
-    const pares = group.filter(a => a.parsed.numero % 2 === 0).sort((a, b) => a.parsed.numero - b.parsed.numero);
-    const impares = group.filter(a => a.parsed.numero % 2 !== 0).sort((a, b) => b.parsed.numero - a.parsed.numero);
-    group.splice(0, group.length, ...impares, ...pares); // Primeiro ímpares descendo, depois pares subindo
+    // Ordenar sub-grupos (ruas) dentro do CEP
+    const subGroups = Array.from(subGroupsByStreet.values());
+
+    // Ordenar dentro de cada sub-grupo (rua): par crescente + ímpar decrescente
+    for (const subGroup of subGroups) {
+      const pares = subGroup.filter(a => a.parsed.numero % 2 === 0).sort((a, b) => a.parsed.numero - b.parsed.numero);
+      const impares = subGroup.filter(a => a.parsed.numero % 2 !== 0).sort((a, b) => b.parsed.numero - a.parsed.numero);
+      subGroup.splice(0, subGroup.length, ...impares, ...pares);
+    }
+
+    // Para o grupo CEP, ordenar as ruas (sub-grupos) baseado em proximidade interna
+    cepGroup.splice(0, cepGroup.length, ...await orderSubGroups(start.coords, subGroups));
   }
 
-  // 3. Ordenar os grupos a partir do ponto de partida
+  // 2. Ordenar os grupos CEP a partir do ponto de partida (escolhe o mais próximo primeiro)
   const route = [];
   let currentPos = start.coords;
-  let remainingGroups = [...groups];
+  let remainingGroups = [...cepGroups];
 
   while (remainingGroups.length > 0) {
     let closestGroupIndex = 0;
     let closestDist = Infinity;
 
-    // Encontra o grupo mais próximo pelo centro
+    // Encontra o grupo CEP mais próximo pelo centro
     for (let i = 0; i < remainingGroups.length; i++) {
       const center = calculateGroupCenter(remainingGroups[i]);
       const { distance } = await calculateRealDistance(currentPos, center);
@@ -358,7 +374,7 @@ async function optimizeRouteSmart(start, targets) {
 
     const selectedGroup = remainingGroups.splice(closestGroupIndex, 1)[0];
 
-    // Dentro do grupo escolhido, decide a direção: começa pelo endereço mais próximo do ponto atual
+    // Dentro do grupo CEP selecionado, decide direção: começa pela rua/endereço mais próximo
     let bestStartIdx = 0;
     let bestStartDist = Infinity;
     for (let i = 0; i < selectedGroup.length; i++) {
@@ -375,7 +391,7 @@ async function optimizeRouteSmart(start, targets) {
       ...selectedGroup.slice(0, bestStartIdx)
     ];
 
-    // Se entrar pelo "fim" da rua, inverte para manter lógica crescente/decrescente
+    // Se entrar pelo "fim", inverte para manter lógica
     if (bestStartIdx > selectedGroup.length / 2) {
       orderedGroup.reverse();
     }
@@ -385,6 +401,28 @@ async function optimizeRouteSmart(start, targets) {
   }
 
   return route;
+}
+
+// Helper para ordenar sub-grupos (ruas) dentro de um CEP
+async function orderSubGroups(currentPos, subGroups) {
+  const ordered = [];
+  let remaining = [...subGroups];
+  while (remaining.length > 0) {
+    let closestIdx = 0;
+    let closestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const center = calculateGroupCenter(remaining[i]);
+      const { distance } = await calculateRealDistance(currentPos, center);
+      if (distance < closestDist) {
+        closestDist = distance;
+        closestIdx = i;
+      }
+    }
+    const nextSub = remaining.splice(closestIdx, 1)[0];
+    ordered.push(...nextSub);
+    currentPos = nextSub[nextSub.length - 1].coords;
+  }
+  return ordered;
 }
 
 async function addAddress() {
