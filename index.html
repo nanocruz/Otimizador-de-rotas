@@ -565,14 +565,35 @@ async function optimizeRoute() {
   btn.innerHTML = '<span class="spinner"></span> Otimizando...';
   try {
     const destinosValidos = [];
-    for (let i = 0; i < addresses.length; i++) {
-      const addr = addresses[i];
-      showStatus(`Validando endereço ${i+1} de ${addresses.length}...`, 'info');
-      if (!addr.coords || !addr.coords.lat || !addr.coords.lon) {
-        const coords = await geocodeAddressFull(addr.text);
-        if (coords) { addr.coords = coords; destinosValidos.push(addr); }
-      } else { destinosValidos.push(addr); }
+// Geocodificação paralela controlada (máximo 3 ao mesmo tempo)
+const BATCH_SIZE = 3;
+const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
+  const batch = addresses.slice(i, i + BATCH_SIZE);
+  const promises = batch.map(async (addr, idx) => {
+    const globalIdx = i + idx + 1;
+    showStatus(`Localizando endereço ${globalIdx} de ${addresses.length}...`, 'info');
+    
+    if (!addr.coords || !addr.coords.lat || !addr.coords.lon) {
+      const coords = await geocodeAddressFull(addr.text);
+      if (coords) {
+        addr.coords = coords;
+        return addr;
+      }
+      return null;
     }
+    return addr;
+  });
+
+  const results = await Promise.all(promises);
+  destinosValidos.push(...results.filter(r => r !== null));
+
+  // Pequeno delay entre lotes para não sobrecarregar o Nominatim
+  if (i + BATCH_SIZE < addresses.length) {
+    await delay(1000); // 1 segundo entre lotes de 3
+  }
+}
     if (destinosValidos.length === 0) return showStatus('Nenhum destino válido.', 'warning');
     showStatus('Calculando melhor rota...', 'info');
     let optimized = await optimizeRouteSmart(departure, destinosValidos);
@@ -783,32 +804,77 @@ function showStatus(message, type = 'info') {
   if (type !== 'warning') setTimeout(() => c.innerHTML = '', 5000);
 }
 function uploadPdf() { document.getElementById('pdf-upload').click(); }
+
 async function processPdf(e) {
   const file = e.target.files[0];
   if (!file) return;
+
   showStatus('Lendo PDF...', 'info');
+
   try {
     const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
-    let fullText = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
+    const numPages = pdf.numPages;
+    let allMatches = [];
+
+    // 1. Extrai texto página por página (mais eficiente que juntar tudo)
+    for (let i = 1; i <= numPages; i++) {
       const page = await pdf.getPage(i);
-      const text = await page.getTextContent();
-      fullText += text.items.map(item => item.str).join(' ') + ' ';
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+
+      // Procura endereços na página atual
+      const pattern = /Endereço:\s*(.+?),\s*(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
+      const matches = [...pageText.matchAll(pattern)];
+
+      for (const m of matches) {
+        const rua = m[1].trim();
+        const numero = m[2].trim();
+        const cep = m[3] + m[4];
+        const addrText = `${rua}, ${numero}, CEP: ${m[3]}-${m[4]}`;
+
+        allMatches.push({
+          text: addrText,
+          cep: cep,
+          rua: rua,
+          numero: numero
+        });
+      }
     }
-    const pattern = /Endereço:\s*(.+?),\s*(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
-    const matches = [...fullText.matchAll(pattern)];
-    if (matches.length === 0) return showStatus('Nenhum endereço encontrado.', 'warning');
-    for (const m of matches) {
-      const addr = `${m[1].trim()}, ${m[2].trim()}, CEP: ${m[3]}-${m[4]}`;
-      const coords = await geocodeBasic(addr);
-      addresses.push({ id: Date.now() + Math.random(), text: addr, coords: coords || null, completed: false });
+
+    if (allMatches.length === 0) {
+      showStatus('Nenhum endereço encontrado no formato esperado.', 'warning');
+      return;
     }
+
+    showStatus(`Encontrados ${allMatches.length} endereços. Geocodificando...`, 'info');
+
+    // 2. ADICIONA ENDEREÇOS SEM GEOCODIFICAR AINDA (rápido!)
+    for (const match of allMatches) {
+      addresses.push({
+        id: Date.now() + Math.random(),
+        text: match.text,
+        coords: null,  // ainda sem coordenadas
+        cep: match.cep,
+        number: parseInt(match.numero) || 0,
+        completed: false
+      });
+    }
+
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
-    showStatus(`${matches.length} endereços adicionados!`, 'success');
-  } catch (err) { showStatus('Erro no PDF.', 'warning'); }
-  finally { e.target.value = ''; }
+    showStatus(`${allMatches.length} endereços adicionados! Toque em "Otimitar Rota" para localizar todos de uma vez.`, 'success');
+
+    // 3. Geocodificação em lote acontece só quando o usuário clicar em "Otimitar Rota"
+    // (já otimizado na função optimizeRoute())
+
+  } catch (err) {
+    console.error(err);
+    showStatus('Erro ao processar o PDF.', 'warning');
+  } finally {
+    e.target.value = '';
+  }
 }
+
 function deleteAddress(id) {
   addresses = addresses.filter(a => a.id !== id);
   renderAddressList();
