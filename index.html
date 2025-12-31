@@ -304,12 +304,33 @@ async function orderSubGroups(currentPos, subGroups) {
   return ordered;
 }
 
+// NOVA FUNÇÃO DE OTIMIZAÇÃO (agrupando por CEP completo e número)
 async function optimizeRouteSmart(start, targets) {
   if (targets.length === 0) return [];
+
+  // 1. Parse + filtra apenas alvos com coordenadas válidas
   const validTargets = targets
     .map(t => ({ ...t, parsed: parseAddress(t.text) }))
-    .filter(t => t.coords && t.coords.lat && t.coords.lon);
+    .filter(t => t.coords && typeof t.coords.lat === 'number' && typeof t.coords.lon === 'number');
 
+  // 2. Ordenar globalmente por CEP crescente, depois rua, depois número
+  validTargets.sort((a, b) => {
+    // CEP numérico para garantir ordenação correta
+    const cepA = parseInt(a.parsed.cep || '0', 10);
+    const cepB = parseInt(b.parsed.cep || '0', 10);
+    if (cepA !== cepB) return cepA - cepB;
+
+    // Se mesmo CEP, ordenar por rua (alfabética)
+    const ruaA = (a.parsed.rua || '').toLowerCase();
+    const ruaB = (b.parsed.rua || '').toLowerCase();
+    if (ruaA < ruaB) return -1;
+    if (ruaA > ruaB) return 1;
+
+    // Se mesma rua, ordenar por número crescente
+    return (a.parsed.numero || 0) - (b.parsed.numero || 0);
+  });
+
+  // 3. Agrupar por CEP (os CEPs já estão em ordem crescente)
   const groupsByCep = new Map();
   for (const t of validTargets) {
     const key = t.parsed.cep;
@@ -317,54 +338,48 @@ async function optimizeRouteSmart(start, targets) {
     groupsByCep.get(key).push(t);
   }
 
-  let cepGroups = [];
-  for (const group of groupsByCep.values()) {
-    const subGroupsByStreet = new Map();
-    for (const t of group) {
-      const key = t.parsed.rua.toLowerCase();
-      if (!subGroupsByStreet.has(key)) subGroupsByStreet.set(key, []);
-      subGroupsByStreet.get(key).push(t);
-    }
-    const subGroups = Array.from(subGroupsByStreet.values());
-    for (const sg of subGroups) {
-      const impares = sg.filter(a => a.parsed.numero % 2 !== 0).sort((a, b) => b.parsed.numero - a.parsed.numero);
-      const pares = sg.filter(a => a.parsed.numero % 2 === 0).sort((a, b) => a.parsed.numero - b.parsed.numero);
-      sg.splice(0, sg.length, ...impares, ...pares);
-    }
-    const ordered = await orderSubGroups(start.coords, subGroups);
-    cepGroups.push(ordered);
-  }
+  // Array de grupos em ordem de CEP (já vem ordenado porque validTargets foi ordenado)
+  const cepGroups = Array.from(groupsByCep.values());
 
+  // 4. Percorrer os grupos de CEP na ordem “melhor próximo”,
+  //    mas respeitando a ordem interna (rua + número) já calculada
   const route = [];
   let currentPos = start.coords;
-  let remaining = [...cepGroups];
+  let remainingGroups = [...cepGroups];
 
-  while (remaining.length > 0) {
-    let bestIdx = 0;
-    let bestDist = Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const center = calculateGroupCenter(remaining[i]);
+  while (remainingGroups.length > 0) {
+    let closestIndex = 0;
+    let closestDist = Infinity;
+
+    for (let i = 0; i < remainingGroups.length; i++) {
+      const center = calculateGroupCenter(remainingGroups[i]);
       const { distance } = await calculateRealDistance(currentPos, center);
-      if (distance < bestDist) {
-        bestDist = distance;
-        bestIdx = i;
+      if (distance < closestDist) {
+        closestDist = distance;
+        closestIndex = i;
       }
     }
-    const selected = remaining.splice(bestIdx, 1)[0];
-    let bestStart = 0;
-    let minDist = Infinity;
-    for (let j = 0; j < selected.length; j++) {
-      const { distance } = await calculateRealDistance(currentPos, selected[j].coords);
-      if (distance < minDist) {
-        minDist = distance;
-        bestStart = j;
+
+    const selectedGroup = remainingGroups.splice(closestIndex, 1)[0];
+
+    // 5. Ajustar só o ponto de entrada no grupo (sem quebrar a ordem de número)
+    let bestStartIdx = 0;
+    let bestStartDist = Infinity;
+    for (let j = 0; j < selectedGroup.length; j++) {
+      const { distance } = await calculateRealDistance(currentPos, selectedGroup[j].coords);
+      if (distance < bestStartDist) {
+        bestStartDist = distance;
+        bestStartIdx = j;
       }
     }
-    const rotated = [...selected.slice(bestStart), ...selected.slice(0, bestStart)];
-    if (bestStart > selected.length / 2) rotated.reverse();
+
+    // Gira o grupo para começar no ponto mais perto, mas mantém ordem crescente depois
+    const rotated = [...selectedGroup.slice(bestStartIdx), ...selectedGroup.slice(0, bestStartIdx)];
+
     route.push(...rotated);
     currentPos = rotated[rotated.length - 1].coords;
   }
+
   return route;
 }
 
