@@ -294,98 +294,83 @@ async function calculateDistanceMatrix(points) {
   return matrix;
 }
 
-
-
-
 async function optimizeRouteSmart(start, targets) {
-  // 1. Preparar os dados (garantir que todos tenham CEP e número)
-  const preparedTargets = targets.map(t => {
-    if (t.number === undefined) {
+  // Normalize data
+  const remaining = targets.map(t => {
+    let number = t.number;
+    if (number === undefined) {
       const m = t.text.match(/, (\d+)/);
-      t.number = m ? parseInt(m[1]) : 0;
+      number = m ? parseInt(m[1]) : 0;
     }
-    if (!t.cep) {
+
+    let cep = t.cep;
+    if (!cep) {
       const m = t.text.match(/\d{5}-?\d{3}/);
-      t.cep = m ? m[0].replace("-", "") : "99999999";
+      cep = m ? m[0].replace("-", "") : null;
     }
-    return t;
+
+    return { ...t, number, cep };
   });
 
-  // 2. Agrupar por CEP completo
-  const groups = {};
-  preparedTargets.forEach(t => {
-    if (!groups[t.cep]) groups[t.cep] = [];
-    groups[t.cep].push(t);
-  });
+  const route = [];
+  let current = {
+    coords: start.coords,
+    cep: start.cep || null,
+    number: start.number || 0,
+    text: start.text
+  };
 
-  // 3. Ordenar os CEPs de forma inteligente (Vizinho Mais Próximo para os Blocos de CEP)
-  let unvisitedCeps = Object.keys(groups);
-  let sortedCeps = [];
-  let currentPos = start.coords;
+  while (remaining.length > 0) {
+    let bestIndex = -1;
+    let bestScore = Infinity;
 
-  while (unvisitedCeps.length > 0) {
-    let nearestCepIdx = -1;
-    let minCepDist = Infinity;
-    
-    for (let i = 0; i < unvisitedCeps.length; i++) {
-      const cep = unvisitedCeps[i];
-      const sectorTargets = groups[cep];
-      
-      // Calcula a distância para o ponto mais próximo deste CEP (seja o menor ou maior número)
-      const sortedAsc = [...sectorTargets].sort((a, b) => a.number - b.number);
-      const sortedDesc = [...sectorTargets].sort((a, b) => b.number - a.number);
-      
-      const d1 = Math.hypot(currentPos.lat - sortedAsc[0].coords.lat, currentPos.lon - sortedAsc[0].coords.lon);
-      const d2 = Math.hypot(currentPos.lat - sortedDesc[0].coords.lat, currentPos.lon - sortedDesc[0].coords.lon);
-      
-      const minDist = Math.min(d1, d2);
-      if (minDist < minCepDist) {
-        minCepDist = minDist;
-        nearestCepIdx = i;
+    for (let i = 0; i < remaining.length; i++) {
+      const candidate = remaining[i];
+
+      // 1️⃣ Real travel time (main factor)
+      const { duration, distance } = await calculateRealDistance(
+        current.coords,
+        candidate.coords
+      );
+
+      let score = duration;
+
+      // 2️⃣ CEP heuristic (Brazil reality)
+      if (current.cep && candidate.cep) {
+        const cepDiff = Math.abs(
+          parseInt(current.cep) - parseInt(candidate.cep)
+        );
+        score += cepDiff * 0.05; // small weight
+      }
+
+      // 3️⃣ House number logic (odd/even street behavior)
+      if (current.number && candidate.number) {
+        const numDiff = Math.abs(current.number - candidate.number);
+        score += numDiff * 0.3;
+      }
+
+      // 4️⃣ Same street bonus
+      if (
+        current.text &&
+        candidate.text &&
+        current.text.split(',')[0] === candidate.text.split(',')[0]
+      ) {
+        score *= 0.6; // strong incentive to finish the street
+      }
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestIndex = i;
       }
     }
-    
-    sortedCeps.push(unvisitedCeps[nearestCepIdx]);
-    
-    // Atualiza a posição atual para o "fim" esperado deste CEP para a próxima busca
-    const nextCep = unvisitedCeps[nearestCepIdx];
-    const sectorTargets = groups[nextCep];
-    const sortedAsc = [...sectorTargets].sort((a, b) => a.number - b.number);
-    const sortedDesc = [...sectorTargets].sort((a, b) => b.number - a.number);
-    const d1 = Math.hypot(currentPos.lat - sortedAsc[0].coords.lat, currentPos.lon - sortedAsc[0].coords.lon);
-    const d2 = Math.hypot(currentPos.lat - sortedDesc[0].coords.lat, currentPos.lon - sortedDesc[0].coords.lon);
-    
-    const bestOrder = d1 <= d2 ? sortedAsc : sortedDesc;
-    currentPos = bestOrder[bestOrder.length - 1].coords;
-    
-    unvisitedCeps.splice(nearestCepIdx, 1);
-  }
-  
-  // 4. Construir a rota final seguindo a ordem dos CEPs e a direção interna
-  let finalRoute = [];
-  currentPos = start.coords;
 
-  for (const cep of sortedCeps) {
-    let sectorTargets = groups[cep];
-    
-    const sortedAsc = [...sectorTargets].sort((a, b) => a.number - b.number);
-    const sortedDesc = [...sectorTargets].sort((a, b) => b.number - a.number);
-    
-    const distToFirst = Math.hypot(currentPos.lat - sortedAsc[0].coords.lat, currentPos.lon - sortedAsc[0].coords.lon);
-    const distToLast = Math.hypot(currentPos.lat - sortedDesc[0].coords.lat, currentPos.lon - sortedDesc[0].coords.lon);
-    
-    const bestSectorOrder = distToFirst <= distToLast ? sortedAsc : sortedDesc;
-    
-    finalRoute.push(...bestSectorOrder);
-    currentPos = bestSectorOrder[bestSectorOrder.length - 1].coords;
+    const next = remaining.splice(bestIndex, 1)[0];
+    route.push(next);
+    current = next;
   }
 
-  return finalRoute;
+  return route;
 }
-
-
-
-
 
 async function addAddress() {
   if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
