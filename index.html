@@ -295,81 +295,124 @@ async function calculateDistanceMatrix(points) {
 }
 
 async function optimizeRouteSmart(start, targets) {
-  // Normalize data
-  const remaining = targets.map(t => {
-    let number = t.number;
-    if (number === undefined) {
+  // 🔹 Garante número e CEP
+  const prepared = targets.map(t => {
+    if (!t.number) {
       const m = t.text.match(/, (\d+)/);
-      number = m ? parseInt(m[1]) : 0;
+      t.number = m ? parseInt(m[1]) : 0;
     }
-
-    let cep = t.cep;
-    if (!cep) {
+    if (!t.cep) {
       const m = t.text.match(/\d{5}-?\d{3}/);
-      cep = m ? m[0].replace("-", "") : null;
+      t.cep = m ? m[0].replace('-', '') : '99999999';
     }
-
-    return { ...t, number, cep };
+    return t;
   });
 
-  const route = [];
-  let current = {
-    coords: start.coords,
-    cep: start.cep || null,
-    number: start.number || 0,
-    text: start.text
-  };
+  // 🔹 Agrupa por CEP
+  const cepGroups = {};
+  prepared.forEach(t => {
+    if (!cepGroups[t.cep]) cepGroups[t.cep] = [];
+    cepGroups[t.cep].push(t);
+  });
 
-  while (remaining.length > 0) {
-    let bestIndex = -1;
+  let remainingCeps = Object.keys(cepGroups);
+  let orderedCeps = [];
+  let current = start;
+
+  // 🔹 Escolha inteligente do próximo CEP
+  while (remainingCeps.length > 0) {
+    let bestIdx = -1;
     let bestScore = Infinity;
 
-    for (let i = 0; i < remaining.length; i++) {
-      const candidate = remaining[i];
+    for (let i = 0; i < remainingCeps.length; i++) {
+      const cep = remainingCeps[i];
+      const list = cepGroups[cep];
 
-      // 1️⃣ Real travel time (main factor)
-      const { duration, distance } = await calculateRealDistance(
-        current.coords,
-        candidate.coords
+      // ordenações possíveis dentro do CEP
+      const asc = [...list].sort((a, b) => a.number - b.number);
+      const desc = [...list].sort((a, b) => b.number - a.number);
+
+      const dAsc = Math.hypot(
+        current.coords.lat - asc[0].coords.lat,
+        current.coords.lon - asc[0].coords.lon
       );
 
-      let score = duration;
+      const dDesc = Math.hypot(
+        current.coords.lat - desc[0].coords.lat,
+        current.coords.lon - desc[0].coords.lon
+      );
 
-      // 2️⃣ CEP heuristic (Brazil reality)
-      if (current.cep && candidate.cep) {
-        const cepDiff = Math.abs(
-          parseInt(current.cep) - parseInt(candidate.cep)
-        );
-        score += cepDiff * 0.05; // small weight
-      }
+      let score = Math.min(dAsc, dDesc);
 
-      // 3️⃣ House number logic (odd/even street behavior)
-      if (current.number && candidate.number) {
-        const numDiff = Math.abs(current.number - candidate.number);
-        score += numDiff * 0.3;
-      }
+      // 🔥 CORREÇÃO PRINCIPAL: lógica de entrada de rua
+      if (current.text && list[0].text) {
+        const streetNow = current.text.split(',')[0].trim();
+        const streetNext = list[0].text.split(',')[0].trim();
 
-      // 4️⃣ Same street bonus
-      if (
-        current.text &&
-        candidate.text &&
-        current.text.split(',')[0] === candidate.text.split(',')[0]
-      ) {
-        score *= 0.6; // strong incentive to finish the street
+        if (streetNow !== streetNext && current.number) {
+          const nums = list.map(a => a.number).filter(n => n > 0);
+          if (nums.length > 0) {
+            const closest = Math.min(...nums.map(n => Math.abs(n - current.number)));
+            score += closest * 1.2; // penaliza entrar pelo fim da rua
+          }
+        }
       }
 
       if (score < bestScore) {
         bestScore = score;
-        bestIndex = i;
+        bestIdx = i;
       }
     }
 
-    const next = remaining.splice(bestIndex, 1)[0];
-    route.push(next);
-    current = next;
+    const chosenCep = remainingCeps[bestIdx];
+    orderedCeps.push(chosenCep);
+
+    // 🔹 Atualiza posição atual assumindo a melhor direção dentro do CEP
+    const list = cepGroups[chosenCep];
+    const asc = [...list].sort((a, b) => a.number - b.number);
+    const desc = [...list].sort((a, b) => b.number - a.number);
+
+    const dAsc = Math.hypot(
+      current.coords.lat - asc[0].coords.lat,
+      current.coords.lon - asc[0].coords.lon
+    );
+    const dDesc = Math.hypot(
+      current.coords.lat - desc[0].coords.lat,
+      current.coords.lon - desc[0].coords.lon
+    );
+
+    const bestOrder = dAsc <= dDesc ? asc : desc;
+    current = bestOrder[bestOrder.length - 1];
+
+    remainingCeps.splice(bestIdx, 1);
   }
 
-  return route;
+  // 🔹 Monta rota final respeitando direção da rua
+  let finalRoute = [];
+  current = start;
+
+  for (const cep of orderedCeps) {
+    const list = cepGroups[cep];
+
+    const asc = [...list].sort((a, b) => a.number - b.number);
+    const desc = [...list].sort((a, b) => b.number - a.number);
+
+    const dAsc = Math.hypot(
+      current.coords.lat - asc[0].coords.lat,
+      current.coords.lon - asc[0].coords.lon
+    );
+    const dDesc = Math.hypot(
+      current.coords.lat - desc[0].coords.lat,
+      current.coords.lon - desc[0].coords.lon
+    );
+
+    const bestOrder = dAsc <= dDesc ? asc : desc;
+
+    finalRoute.push(...bestOrder);
+    current = bestOrder[bestOrder.length - 1];
+  }
+
+  return finalRoute;
 }
 
 async function addAddress() {
