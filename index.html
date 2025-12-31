@@ -165,22 +165,22 @@ let scannerType = null;
 let isPhotoMode = false;
 let distanceCache = new Map();
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 function getCacheKey(lat1, lon1, lat2, lon2) {
   const p1 = `${lat1.toFixed(6)},${lon1.toFixed(6)}`;
   const p2 = `${lat2.toFixed(6)},${lon2.toFixed(6)}`;
   return p1 < p2 ? `${p1}|${p2}` : `${p2}|${p1}`;
 }
 
-window.onload = () => {
-  document.getElementById('address-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addAddress(); });
-  document.getElementById('base-location-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); setBaseLocation(); } });
-  document.getElementById('departure-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') setDepartureAddress(); });
-  if (window.pdfjsLib) {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  }
-};
-
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+function haversineDistance(from, to) {
+  const R = 6371000;
+  const dLat = (to.lat - from.lat) * Math.PI / 180;
+  const dLon = (to.lon - from.lon) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(from.lat * Math.PI / 180) * Math.cos(to.lat * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
 
 async function geocodeBasic(address, retryCount = 0) {
   try {
@@ -209,14 +209,13 @@ async function processCEP(text) {
   const cepMatch = text.match(/(?:cep\s*:?\s*)?(\d{5})-?(\d{3})(?:\s*,?\s*(\d+))?/i);
   if (!cepMatch) return null;
   const cep = cepMatch[1] + cepMatch[2];
-  const numero = cepMatch[3] || '';
   showStatus('Buscando CEP...', 'info');
   try {
     const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
     const data = await resp.json();
     if (data.erro) throw new Error('CEP não encontrado');
     let addressText = data.logradouro || '';
-    if (numero) addressText += `, ${numero}`;
+    if (cepMatch[3]) addressText += `, ${cepMatch[3]}`;
     if (data.bairro) addressText += `, ${data.bairro}`;
     addressText += `, ${data.localidade}, ${data.uf}`;
     let coords = await geocodeBasic(`${addressText}, Brasil`);
@@ -229,19 +228,6 @@ async function processCEP(text) {
     showStatus('CEP inválido: ' + e.message, 'warning');
     return { success: false };
   }
-}
-
-function haversineDistance(from, to) {
-  const R = 6371000;
-  const φ1 = from.lat * Math.PI / 180;
-  const φ2 = to.lat * Math.PI / 180;
-  const Δφ = (to.lat - from.lat) * Math.PI / 180;
-  const Δλ = (to.lon - from.lon) * Math.PI / 180;
-  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  let d = R * c;
-  if (d < 10) d = 10;
-  return d;
 }
 
 async function calculateRealDistance(from, to) {
@@ -283,111 +269,80 @@ function calculateGroupCenter(group) {
   return { lat: sum.lat / group.length, lon: sum.lon / group.length };
 }
 
-async function orderSubGroups(currentPos, subGroups) {
-  const ordered = [];
-  let remaining = [...subGroups];
-  while (remaining.length > 0) {
-    let closestIdx = 0;
-    let closestDist = Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const center = calculateGroupCenter(remaining[i]);
-      const { distance } = await calculateRealDistance(currentPos, center);
-      if (distance < closestDist) {
-        closestDist = distance;
-        closestIdx = i;
+function groupByCEP(targets) {
+  const groups = new Map();
+  targets.forEach(target => {
+    const cep = target.cep || '00000000';
+    if (!groups.has(cep)) groups.set(cep, []);
+    groups.get(cep).push(target);
+  });
+  return Array.from(groups.values());
+}
+
+async function precomputeDistances(targets) {
+  for (let i = 0; i < targets.length; i++) {
+    for (let j = i + 1; j < targets.length; j++) {
+      const from = targets[i].coords;
+      const to = targets[j].coords;
+      const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
+      if (!distanceCache.has(key)) {
+        await calculateRealDistance(from, to);
       }
     }
-    const next = remaining.splice(closestIdx, 1)[0];
-    ordered.push(...next);
-    currentPos = next[next.length - 1].coords;
   }
-  return ordered;
 }
 
-// NOVA FUNÇÃO DE OTIMIZAÇÃO (agrupando por CEP completo e número)
+async function optimizeNearestNeighbor(start, targets) {
+  if (targets.length === 0) return [];
+  const route = [];
+  let currentPos = start.coords;
+  let remaining = [...targets];
+  while (remaining.length > 0) {
+    let nearestIdx = 0;
+    let nearestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const targetCoords = remaining[i].coords;
+      const key = getCacheKey(currentPos.lat, currentPos.lon, targetCoords.lat, targetCoords.lon);
+      let distance;
+      if (distanceCache.has(key)) {
+        distance = distanceCache.get(key).distance;
+      } else {
+        distance = haversineDistance(currentPos, targetCoords);
+      }
+      if (distance < nearestDist) {
+        nearestDist = distance;
+        nearestIdx = i;
+      }
+    }
+    const nextPoint = remaining.splice(nearestIdx, 1)[0];
+    route.push(nextPoint);
+    currentPos = nextPoint.coords;
+  }
+  return route;
+}
+
 async function optimizeRouteSmart(start, targets) {
   if (targets.length === 0) return [];
-
-  // 1. Parse + filtra apenas alvos com coordenadas válidas
-  const validTargets = targets
-    .map(t => ({ ...t, parsed: parseAddress(t.text) }))
-    .filter(t => t.coords && typeof t.coords.lat === 'number' && typeof t.coords.lon === 'number');
-
-  // 2. Ordenar globalmente por CEP crescente, depois rua, depois número
+  const validTargets = targets.filter(t => t.coords && typeof t.coords.lat === 'number' && typeof t.coords.lon === 'number');
   validTargets.sort((a, b) => {
-    // CEP numérico para garantir ordenação correta
-    const cepA = parseInt(a.parsed.cep || '0', 10);
-    const cepB = parseInt(b.parsed.cep || '0', 10);
+    const cepA = parseInt(a.cep || '0', 10);
+    const cepB = parseInt(b.cep || '0', 10);
     if (cepA !== cepB) return cepA - cepB;
-
-    // Se mesmo CEP, ordenar por rua (alfabética)
-    const ruaA = (a.parsed.rua || '').toLowerCase();
-    const ruaB = (b.parsed.rua || '').toLowerCase();
+    const ruaA = (a.text.match(/(.+?), \d+/)?.[1] || '').toLowerCase();
+    const ruaB = (b.text.match(/(.+?), \d+/)?.[1] || '').toLowerCase();
     if (ruaA < ruaB) return -1;
     if (ruaA > ruaB) return 1;
-
-    // Se mesma rua, ordenar por número crescente
-    return (a.parsed.numero || 0) - (b.parsed.numero || 0);
+    return (a.number || 0) - (b.number || 0);
   });
-
-  // 3. Agrupar por CEP (os CEPs já estão em ordem crescente)
-  const groupsByCep = new Map();
-  for (const t of validTargets) {
-    const key = t.parsed.cep;
-    if (!groupsByCep.has(key)) groupsByCep.set(key, []);
-    groupsByCep.get(key).push(t);
+  const cepGroups = groupByCEP(validTargets);
+  await precomputeDistances(validTargets);
+  const optimizedGroups = [];
+  for (const group of cepGroups) {
+    const optimizedGroup = await optimizeNearestNeighbor(start, group);
+    optimizedGroups.push(...optimizedGroup);
+    start = { coords: optimizedGroup[optimizedGroup.length - 1].coords };
   }
-
-  // Array de grupos em ordem de CEP (já vem ordenado porque validTargets foi ordenado)
-  const cepGroups = Array.from(groupsByCep.values());
-
-// 4. ROTA FINAL: vizinho mais próximo RÁPIDO (Haversine + cache)
-const route = [];
-let currentPos = start.coords;
-let allRemaining = validTargets.slice();
-
-while (allRemaining.length > 0) {
-  let nearestIdx = 0;
-  let nearestDist = Infinity;
-
-  // Usa Haversine rápido (sem API) + cache para todos
-  for (let i = 0; i < allRemaining.length; i++) {
-    const targetCoords = allRemaining[i].coords;
-    
-    // Tenta cache primeiro (distâncias reais já calculadas)
-    const cacheKey = getCacheKey(currentPos.lat, currentPos.lon, targetCoords.lat, targetCoords.lon);
-    let distance;
-    
-    if (distanceCache.has(cacheKey)) {
-      distance = distanceCache.get(cacheKey).distance;
-    } else {
-      // Só Haversine rápido se não tem cache
-      distance = haversineDistance(currentPos, targetCoords);
-    }
-    
-    if (distance < nearestDist) {
-      nearestDist = distance;
-      nearestIdx = i;
-    }
-  }
-
-  const nextPoint = allRemaining.splice(nearestIdx, 1)[0];
-  route.push(nextPoint);
-  currentPos = nextPoint.coords;
-}
-
-// Helper Haversine ULTRA RÁPIDO (sem await)
-function haversineDistance(from, to) {
-  const R = 6371000;
-  const dLat = (to.lat - from.lat) * Math.PI / 180;
-  const dLon = (to.lon - from.lon) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) + 
-            Math.cos(from.lat * Math.PI / 180) * Math.cos(to.lat * Math.PI / 180) * 
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
-  return route;
+  return optimizedGroups;
 }
 
 async function addAddress() {
@@ -576,7 +531,7 @@ async function optimizeRoute() {
   btn.innerHTML = '<span class="spinner"></span> Otimizando...';
   try {
     const destinosValidos = [];
-    const BATCH_SIZE = 3;
+    const BATCH_SIZE = 5;
     for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
       const batch = addresses.slice(i, i + BATCH_SIZE);
       const promises = batch.map(async (addr, idx) => {
@@ -869,6 +824,15 @@ function deleteAddress(id) {
   renderAddressList();
   if (addresses.length === 0) document.getElementById('optimize-btn').style.display = 'none';
 }
+
+window.onload = () => {
+  document.getElementById('address-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') addAddress(); });
+  document.getElementById('base-location-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); setBaseLocation(); } });
+  document.getElementById('departure-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') setDepartureAddress(); });
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+};
 </script>
 </body>
 </html>
