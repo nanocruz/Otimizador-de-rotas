@@ -180,36 +180,23 @@ window.onload = () => {
   }
 };
 
-// 🔹 FUNÇÃO DE DELAY PARA EVITAR ERRO 429
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function geocodeBasic(address, retryCount = 0) {
   try {
-    // Adiciona um pequeno delay entre requisições para evitar 429
-    await sleep(1000); 
-    
+    await sleep(1000);
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&addressdetails=1&accept-language=pt-BR`;
-    const resp = await fetch(url, { 
-      headers: { 
-        'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)',
-        'Accept': 'application/json'
-      } 
-    });
-
+    const resp = await fetch(url, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)', 'Accept': 'application/json' } });
     if (resp.status === 429 && retryCount < 3) {
-      console.warn(`Erro 429 detectado. Tentando novamente em ${2000 * (retryCount + 1)}ms...`);
       await sleep(2000 * (retryCount + 1));
       return geocodeBasic(address, retryCount + 1);
     }
-
     if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
-
     const data = await resp.json();
     if (data?.length > 0) {
       return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), display_name: data[0].display_name };
     }
-  } catch (e) { 
-    console.error('Erro na geocodificação:', e); 
+  } catch (e) {
     if (retryCount < 2) {
       await sleep(2000);
       return geocodeBasic(address, retryCount + 1);
@@ -244,6 +231,19 @@ async function processCEP(text) {
   }
 }
 
+function haversineDistance(from, to) {
+  const R = 6371000;
+  const φ1 = from.lat * Math.PI / 180;
+  const φ2 = to.lat * Math.PI / 180;
+  const Δφ = (to.lat - from.lat) * Math.PI / 180;
+  const Δλ = (to.lon - from.lon) * Math.PI / 180;
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  let d = R * c;
+  if (d < 10) d = 10;
+  return d;
+}
+
 async function calculateRealDistance(from, to) {
   if (!from || !to || typeof from.lat !== 'number' || typeof from.lon !== 'number' || typeof to.lat !== 'number' || typeof to.lon !== 'number') {
     return { distance: Number.POSITIVE_INFINITY, duration: Number.POSITIVE_INFINITY };
@@ -256,193 +256,33 @@ async function calculateRealDistance(from, to) {
     if (resp.ok) {
       const data = await resp.json();
       if (data?.code === 'Ok' && data.routes?.length > 0) {
-        const result = { distance: data.routes[0].distance, duration: data.routes[0].duration };
+        const result = { distance: data.routes[0].distance || haversineDistance(from, to), duration: data.routes[0].duration };
         distanceCache.set(key, result);
         return result;
       }
     }
-  } catch (err) { console.warn('Roteamento falhou, usando Haversine.', err); }
-  const R = 6371000;
-  const φ1 = from.lat * Math.PI / 180;
-  const φ2 = to.lat * Math.PI / 180;
-  const Δφ = (to.lat - from.lat) * Math.PI / 180;
-  const Δλ = (to.lon - from.lon) * Math.PI / 180;
-  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c;
-  const duration = distance / 13.89;
-  const result = { distance, duration };
+  } catch (err) {}
+  const distance = haversineDistance(from, to);
+  const result = { distance, duration: distance / 13.89 };
   distanceCache.set(key, result);
   return result;
 }
 
-
-
-
-async function calculateDistanceMatrix(points) {
-  const matrix = [];
-  for (let i = 0; i < points.length; i++) {
-    matrix[i] = [];
-    for (let j = 0; j < points.length; j++) {
-      if (i === j) {
-        matrix[i][j] = { distance: 0, duration: 0 };
-      } else {
-        matrix[i][j] = await calculateRealDistance(points[i].coords, points[j].coords);
-      }
-    }
-  }
-  return matrix;
-}
-
-// Funções auxiliares para a nova otimização
 function parseAddress(text) {
   const parts = text.split(',');
-  const ruaParte = parts[0]?.trim() || '';
+  const rua = parts[0]?.trim() || '';
   const numeroStr = parts[1]?.trim() || '0';
   const numero = parseInt(numeroStr.replace(/\D/g, ''), 10) || 0;
   const cepMatch = text.match(/CEP[:\s]*(\d{5})-?(\d{3})/i);
   const cep = cepMatch ? cepMatch[1] + cepMatch[2] : '00000000';
-  return { rua: ruaParte, numero, cep, text };
+  return { rua, numero, cep };
 }
 
 function calculateGroupCenter(group) {
-  if (group.length === 0) return null;
   const sum = group.reduce((acc, a) => ({ lat: acc.lat + a.coords.lat, lon: acc.lon + a.coords.lon }), { lat: 0, lon: 0 });
   return { lat: sum.lat / group.length, lon: sum.lon / group.length };
 }
 
-// Ajuste em calculateRealDistance para evitar 0.0km
-async function calculateRealDistance(from, to) {
-  if (!from || !to || typeof from.lat !== 'number' || typeof from.lon !== 'number' || typeof to.lat !== 'number' || typeof to.lon !== 'number') {
-    return { distance: Number.POSITIVE_INFINITY, duration: Number.POSITIVE_INFINITY };
-  }
-  const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
-  if (distanceCache.has(key)) return distanceCache.get(key);
-  try {
-    const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${from.lon},${from.lat};${to.lon},${to.lat}?overview=false`;
-    const resp = await fetch(url, { headers: { 'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)' } });
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data?.code === 'Ok' && data.routes?.length > 0) {
-        let result = { distance: data.routes[0].distance, duration: data.routes[0].duration };
-        if (result.distance === 0) { // Fallback se routing der 0
-          result = haversineFallback(from, to);
-        }
-        distanceCache.set(key, result);
-        return result;
-      }
-    }
-  } catch (err) { console.warn('Roteamento falhou, usando Haversine.', err); }
-  const result = haversineFallback(from, to);
-  distanceCache.set(key, result);
-  return result;
-}
-
-// Helper para Haversine com ajuste
-function haversineFallback(from, to) {
-  const R = 6371000;
-  const φ1 = from.lat * Math.PI / 180;
-  const φ2 = to.lat * Math.PI / 180;
-  const Δφ = (to.lat - from.lat) * Math.PI / 180;
-  const Δλ = (to.lon - from.lon) * Math.PI / 180;
-  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  let distance = R * c;
-  if (distance === 0) distance = 10; // Mínimo 10m se zero
-  const duration = distance / 13.89;
-  return { distance, duration };
-}
-
-// NOVA FUNÇÃO DE OTIMIZAÇÃO (agrupando por CEP completo)
-async function optimizeRouteSmart(start, targets) {
-  if (targets.length === 0) return [];
-
-  // Parse e valida
-  const validTargets = targets
-    .map(t => ({ ...t, parsed: parseAddress(t.text) }))
-    .filter(t => t.coords && t.coords.lat && t.coords.lon);
-
-  console.log('Targets válidos:', validTargets); // Depuração
-
-  // 1. Agrupar por CEP completo
-  const groupsByCep = new Map();
-  for (const t of validTargets) {
-    const key = t.parsed.cep;
-    if (!groupsByCep.has(key)) groupsByCep.set(key, []);
-    groupsByCep.get(key).push(t);
-  }
-
-  let cepGroups = Array.from(groupsByCep.values());
-
-  // Dentro de cada grupo CEP, sub-agrupar por rua e ordenar
-  for (let i = 0; i < cepGroups.length; i++) {
-    const cepGroup = cepGroups[i];
-    const subGroupsByStreet = new Map();
-    for (const t of cepGroup) {
-      const key = t.parsed.rua.toLowerCase();
-      if (!subGroupsByStreet.has(key)) subGroupsByStreet.set(key, []);
-      subGroupsByStreet.get(key).push(t);
-    }
-
-    const subGroups = Array.from(subGroupsByStreet.values());
-
-    // Ordenar dentro de cada rua
-    for (const subGroup of subGroups) {
-      const pares = subGroup.filter(a => a.parsed.numero % 2 === 0).sort((a, b) => a.parsed.numero - b.parsed.numero);
-      const impares = subGroup.filter(a => a.parsed.numero % 2 !== 0).sort((a, b) => b.parsed.numero - a.parsed.numero);
-      subGroup.splice(0, subGroup.length, ...impares, ...pares);
-    }
-
-    // Ordenar ruas dentro do CEP
-    const orderedSub = await orderSubGroups(start.coords, subGroups);
-    cepGroups[i] = orderedSub;
-  }
-
-  console.log('Grupos por CEP:', cepGroups); // Depuração
-
-  // 2. Ordenar grupos CEP pelo mais próximo do start
-  const route = [];
-  let currentPos = start.coords;
-  let remainingGroups = cepGroups.map(g => g.flat()); // Flatten para lista plana por CEP
-
-  while (remainingGroups.length > 0) {
-    let closestIndex = 0;
-    let closestDist = Infinity;
-
-    for (let i = 0; i < remainingGroups.length; i++) {
-      const center = calculateGroupCenter(remainingGroups[i]);
-      const { distance } = await calculateRealDistance(currentPos, center);
-      console.log(`Distância para grupo ${i}: ${distance}m`); // Depuração
-      if (distance < closestDist) {
-        closestDist = distance;
-        closestIndex = i;
-      }
-    }
-
-    const selected = remainingGroups.splice(closestIndex, 1)[0];
-
-    // Ajustar direção dentro do grupo
-    let bestStartIdx = 0;
-    let bestStartDist = Infinity;
-    for (let j = 0; j < selected.length; j++) {
-      const { distance } = await calculateRealDistance(currentPos, selected[j].coords);
-      if (distance < bestStartDist) {
-        bestStartDist = distance;
-        bestStartIdx = j;
-      }
-    }
-
-    let orderedGroup = [...selected.slice(bestStartIdx), ...selected.slice(0, bestStartIdx)];
-    if (bestStartIdx > selected.length / 2) orderedGroup.reverse();
-
-    route.push(...orderedGroup);
-    currentPos = orderedGroup[orderedGroup.length - 1].coords;
-  }
-
-  return route;
-}
-
-// Helper para ordenar sub-grupos (ruas) dentro de um CEP
 async function orderSubGroups(currentPos, subGroups) {
   const ordered = [];
   let remaining = [...subGroups];
@@ -457,11 +297,75 @@ async function orderSubGroups(currentPos, subGroups) {
         closestIdx = i;
       }
     }
-    const nextSub = remaining.splice(closestIdx, 1)[0];
-    ordered.push(...nextSub);
-    currentPos = nextSub[nextSub.length - 1].coords;
+    const next = remaining.splice(closestIdx, 1)[0];
+    ordered.push(...next);
+    currentPos = next[next.length - 1].coords;
   }
-  return ordered.flat();
+  return ordered;
+}
+
+async function optimizeRouteSmart(start, targets) {
+  if (targets.length === 0) return [];
+  const validTargets = targets
+    .map(t => ({ ...t, parsed: parseAddress(t.text) }))
+    .filter(t => t.coords && t.coords.lat && t.coords.lon);
+
+  const groupsByCep = new Map();
+  for (const t of validTargets) {
+    const key = t.parsed.cep;
+    if (!groupsByCep.has(key)) groupsByCep.set(key, []);
+    groupsByCep.get(key).push(t);
+  }
+
+  let cepGroups = [];
+  for (const group of groupsByCep.values()) {
+    const subGroupsByStreet = new Map();
+    for (const t of group) {
+      const key = t.parsed.rua.toLowerCase();
+      if (!subGroupsByStreet.has(key)) subGroupsByStreet.set(key, []);
+      subGroupsByStreet.get(key).push(t);
+    }
+    const subGroups = Array.from(subGroupsByStreet.values());
+    for (const sg of subGroups) {
+      const impares = sg.filter(a => a.parsed.numero % 2 !== 0).sort((a, b) => b.parsed.numero - a.parsed.numero);
+      const pares = sg.filter(a => a.parsed.numero % 2 === 0).sort((a, b) => a.parsed.numero - b.parsed.numero);
+      sg.splice(0, sg.length, ...impares, ...pares);
+    }
+    const ordered = await orderSubGroups(start.coords, subGroups);
+    cepGroups.push(ordered);
+  }
+
+  const route = [];
+  let currentPos = start.coords;
+  let remaining = [...cepGroups];
+
+  while (remaining.length > 0) {
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const center = calculateGroupCenter(remaining[i]);
+      const { distance } = await calculateRealDistance(currentPos, center);
+      if (distance < bestDist) {
+        bestDist = distance;
+        bestIdx = i;
+      }
+    }
+    const selected = remaining.splice(bestIdx, 1)[0];
+    let bestStart = 0;
+    let minDist = Infinity;
+    for (let j = 0; j < selected.length; j++) {
+      const { distance } = await calculateRealDistance(currentPos, selected[j].coords);
+      if (distance < minDist) {
+        minDist = distance;
+        bestStart = j;
+      }
+    }
+    const rotated = [...selected.slice(bestStart), ...selected.slice(0, bestStart)];
+    if (bestStart > selected.length / 2) rotated.reverse();
+    route.push(...rotated);
+    currentPos = rotated[rotated.length - 1].coords;
+  }
+  return route;
 }
 
 async function addAddress() {
@@ -472,20 +376,18 @@ async function addAddress() {
   showStatus('Buscando endereço...', 'info');
   const cepResult = await processCEP(text);
   if (cepResult?.success) {
-    if (cepResult.coords && typeof cepResult.coords.lat === 'number' && !isNaN(cepResult.coords.lat)) {
-      const numMatch = cepResult.address.match(/, (\d+)/);
-      const houseNumber = numMatch ? parseInt(numMatch[1]) : 0;
-      addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, cep: cepResult.cep, number: houseNumber, completed: false });
-      input.value = '';
-      renderAddressList();
-      document.getElementById('optimize-btn').style.display = 'block';
-      showStatus('Endereço adicionado!', 'success');
-      return;
-    }
+    const numMatch = cepResult.address.match(/, (\d+)/);
+    const houseNumber = numMatch ? parseInt(numMatch[1]) : 0;
+    addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, cep: cepResult.cep, number: houseNumber, completed: false });
+    input.value = '';
+    renderAddressList();
+    document.getElementById('optimize-btn').style.display = 'block';
+    showStatus('Endereço adicionado!', 'success');
+    return;
   }
   const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
   const coords = await geocodeBasic(fullQuery);
-  if (coords && typeof coords.lat === 'number' && !isNaN(coords.lat)) {
+  if (coords) {
     addresses.push({ id: Date.now(), text: text, coords: coords, completed: false });
     input.value = '';
     renderAddressList();
@@ -521,7 +423,9 @@ async function searchAndSelectAddress(query) {
     });
     suggestionsContainer.innerHTML = html;
     window.pendingSuggestions = results;
-  } catch (e) { suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>'; }
+  } catch (e) {
+    suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>';
+  }
 }
 
 function selectSuggestion(index) {
@@ -562,7 +466,7 @@ async function geocodeBaseLocation(locationText) {
     userLocation = { city, state };
     document.getElementById('base-location-display').textContent = `Localização base: ${city}${state ? ', ' + state : ''}.`;
     document.getElementById('departure-section').style.display = 'block';
-    showStatus(`Localização base definida!`, 'success');
+    showStatus('Localização base definida!', 'success');
   } catch (error) {
     showStatus(`${error.message}`, 'warning');
     userLocation = null;
@@ -616,7 +520,9 @@ async function searchAndSelectDeparture(query) {
     });
     suggestionsContainer.innerHTML = html;
     window.pendingDepartureSuggestions = results;
-  } catch (e) { suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>'; }
+  } catch (e) {
+    suggestionsContainer.innerHTML = '<div class="status-bar status-warning">Erro na busca.</div>';
+  }
 }
 
 function selectDepartureSuggestion(index) {
@@ -629,14 +535,6 @@ function selectDepartureSuggestion(index) {
   showStatus('Partida definida!', 'success');
 }
 
-function normalizeCoords(coords) {
-  if (!coords) return null;
-  const lat = Number(coords.lat);
-  const lon = Number(coords.lon);
-  if (isNaN(lat) || isNaN(lon)) return null;
-  return { lat, lon };
-}
-
 async function geocodeAddressFull(address) {
   let full = address + ', Brasil';
   if (userLocation) full = `${address}, ${userLocation.city}${userLocation.state ? ', ' + userLocation.state : ''}, Brasil`;
@@ -645,9 +543,8 @@ async function geocodeAddressFull(address) {
   if (userLocation) {
     const fallback = `${userLocation.city}, ${userLocation.state}, Brasil`;
     coords = await geocodeBasic(fallback);
-    if (coords) return coords;
   }
-  return null;
+  return coords;
 }
 
 async function optimizeRoute() {
@@ -657,38 +554,29 @@ async function optimizeRoute() {
   btn.innerHTML = '<span class="spinner"></span> Otimizando...';
   try {
     const destinosValidos = [];
-// Geocodificação paralela controlada (máximo 3 ao mesmo tempo)
-const BATCH_SIZE = 3;
-const delay = (ms) => new Promise(res => setTimeout(res, ms));
-
-for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
-  const batch = addresses.slice(i, i + BATCH_SIZE);
-  const promises = batch.map(async (addr, idx) => {
-    const globalIdx = i + idx + 1;
-    showStatus(`Localizando endereço ${globalIdx} de ${addresses.length}...`, 'info');
-    
-    if (!addr.coords || !addr.coords.lat || !addr.coords.lon) {
-      const coords = await geocodeAddressFull(addr.text);
-      if (coords) {
-        addr.coords = coords;
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
+      const batch = addresses.slice(i, i + BATCH_SIZE);
+      const promises = batch.map(async (addr, idx) => {
+        const globalIdx = i + idx + 1;
+        showStatus(`Localizando endereço ${globalIdx} de ${addresses.length}...`, 'info');
+        if (!addr.coords || !addr.coords.lat || !addr.coords.lon) {
+          const coords = await geocodeAddressFull(addr.text);
+          if (coords) {
+            addr.coords = coords;
+            return addr;
+          }
+          return null;
+        }
         return addr;
-      }
-      return null;
+      });
+      const results = await Promise.all(promises);
+      destinosValidos.push(...results.filter(r => r !== null));
+      if (i + BATCH_SIZE < addresses.length) await sleep(1000);
     }
-    return addr;
-  });
-
-  const results = await Promise.all(promises);
-  destinosValidos.push(...results.filter(r => r !== null));
-
-  // Pequeno delay entre lotes para não sobrecarregar o Nominatim
-  if (i + BATCH_SIZE < addresses.length) {
-    await delay(1000); // 1 segundo entre lotes de 3
-  }
-}
     if (destinosValidos.length === 0) return showStatus('Nenhum destino válido.', 'warning');
     showStatus('Calculando melhor rota...', 'info');
-    let optimized = await optimizeRouteSmart(departure, destinosValidos);
+    const optimized = await optimizeRouteSmart(departure, destinosValidos);
     optimizedRoute = [{ ...departure, completed: true }, ...optimized];
     activeIndex = 1;
     document.getElementById('add-section').style.display = 'none';
@@ -696,8 +584,13 @@ for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
     btn.style.display = 'none';
     await renderRoute();
     showStatus('Rota otimizada!', 'success');
-  } catch (e) { console.error(e); showStatus('Erro ao otimizar.', 'warning'); }
-  finally { btn.disabled = false; btn.innerHTML = 'Otimizar Rota'; }
+  } catch (e) {
+    console.error(e);
+    showStatus('Erro ao otimizar.', 'warning');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Otimizar Rota';
+  }
 }
 
 function renderAddressList() {
@@ -708,8 +601,8 @@ function renderAddressList() {
     html += `<div class="address-item">
       <div class="address-number">${i + 1}</div>
       <div class="address-text">${addr.text}</div>
-      <button class="btn-delete" onclick="editAddress(${addr.id})" title="Editar">✏️</button>
-      <button class="btn-delete" onclick="deleteAddress(${addr.id})" title="Excluir">×</button>
+      <button class="btn-delete" onclick="editAddress(${addr.id})" title="Editar">Edit</button>
+      <button class="btn-delete" onclick="deleteAddress(${addr.id})" title="Excluir">Delete</button>
     </div>`;
   });
   list.innerHTML = html;
@@ -723,8 +616,14 @@ function editAddress(id) {
   (async () => {
     showStatus('Atualizando...', 'info');
     const coords = await geocodeBasic(newText.trim());
-    if (coords) { addr.text = newText.trim(); addr.coords = coords; renderAddressList(); showStatus('Atualizado!', 'success'); }
-    else { showStatus('Não localizado.', 'warning'); }
+    if (coords) {
+      addr.text = newText.trim();
+      addr.coords = coords;
+      renderAddressList();
+      showStatus('Atualizado!', 'success');
+    } else {
+      showStatus('Não localizado.', 'warning');
+    }
   })();
 }
 
@@ -742,13 +641,13 @@ async function renderRoute() {
     }
     html += `<div class="route-item ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">
       <div class="route-header">
-        <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">${concluido ? '✓' : i === 0 ? 'P' : i}</div>
+        <div class="route-number ${ativo ? 'active' : ''} ${concluido ? 'completed' : ''}">${concluido ? 'Check' : i === 0 ? 'P' : i}</div>
         <div class="route-text"><strong>${i === 0 ? 'Ponto de Partida' : a.text}</strong>${distInfo}</div>
       </div>
       ${ativo && !concluido ? `<div class="route-buttons">
           <button class="btn btn-maps btn-small" onclick="openMaps(${i}, 'google')">Maps</button>
           <button class="btn btn-waze btn-small" onclick="openMaps(${i}, 'waze')">Waze</button>
-          <button class="btn btn-complete btn-small" onclick="markCompleted(${i})">✓</button>
+          <button class="btn btn-complete btn-small" onclick="markCompleted(${i})">Check</button>
         </div>` : ''}
     </div>`;
   }
@@ -870,7 +769,7 @@ async function captureForScan() {
 function stopCamera() {
   if (scanInterval) clearInterval(scanInterval);
   if (cameraStream) cameraStream.getTracks().forEach(t => t.stop());
-  document.getElementById('camera-container').style.none = 'none';
+  document.getElementById('camera-container').style.display = 'none';
 }
 
 async function captureImage() {
@@ -900,67 +799,43 @@ function uploadPdf() { document.getElementById('pdf-upload').click(); }
 async function processPdf(e) {
   const file = e.target.files[0];
   if (!file) return;
-
   showStatus('Lendo PDF...', 'info');
-
   try {
     const pdf = await pdfjsLib.getDocument(URL.createObjectURL(file)).promise;
     const numPages = pdf.numPages;
     let allMatches = [];
-
-    // 1. Extrai texto página por página (mais eficiente que juntar tudo)
     for (let i = 1; i <= numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       const pageText = textContent.items.map(item => item.str).join(' ');
-
-      // Procura endereços na página atual
       const pattern = /Endereço:\s*(.+?),\s*(\d{1,6})\s+CEP:\s*(\d{5})-?(\d{3})/gi;
       const matches = [...pageText.matchAll(pattern)];
-
       for (const m of matches) {
         const rua = m[1].trim();
         const numero = m[2].trim();
         const cep = m[3] + m[4];
         const addrText = `${rua}, ${numero}, CEP: ${m[3]}-${m[4]}`;
-
-        allMatches.push({
-          text: addrText,
-          cep: cep,
-          rua: rua,
-          numero: numero
-        });
+        allMatches.push({ text: addrText, cep: cep, numero: numero });
       }
     }
-
     if (allMatches.length === 0) {
       showStatus('Nenhum endereço encontrado no formato esperado.', 'warning');
       return;
     }
-
-    showStatus(`Encontrados ${allMatches.length} endereços. Geocodificando...`, 'info');
-
-    // 2. ADICIONA ENDEREÇOS SEM GEOCODIFICAR AINDA (rápido!)
     for (const match of allMatches) {
       addresses.push({
         id: Date.now() + Math.random(),
         text: match.text,
-        coords: null,  // ainda sem coordenadas
+        coords: null,
         cep: match.cep,
         number: parseInt(match.numero) || 0,
         completed: false
       });
     }
-
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
-    showStatus(`${allMatches.length} endereços adicionados! Toque em "Otimitar Rota" para localizar todos de uma vez.`, 'success');
-
-    // 3. Geocodificação em lote acontece só quando o usuário clicar em "Otimitar Rota"
-    // (já otimizado na função optimizeRoute())
-
+    showStatus(`${allMatches.length} endereços adicionados! Toque em "Otimizar Rota" para continuar.`, 'success');
   } catch (err) {
-    console.error(err);
     showStatus('Erro ao processar o PDF.', 'warning');
   } finally {
     e.target.value = '';
