@@ -254,95 +254,116 @@ async function calculateRealDistance(from, to) {
   return result;
 }
 
-function parseAddress(text) {
-  const parts = text.split(',');
-  const rua = parts[0]?.trim() || '';
-  const numeroStr = parts[1]?.trim() || '0';
-  const numero = parseInt(numeroStr.replace(/\D/g, ''), 10) || 0;
-  const cepMatch = text.match(/CEP[:\s]*(\d{5})-?(\d{3})/i);
-  const cep = cepMatch ? cepMatch[1] + cepMatch[2] : '00000000';
-  return { rua, numero, cep };
+function parseAddressNumber(text) {
+  const match = text.match(/,?\s*(\d{1,6})\b/);
+  return match ? parseInt(match[1], 10) : 0;
 }
 
-function calculateGroupCenter(group) {
-  const sum = group.reduce((acc, a) => ({ lat: acc.lat + a.coords.lat, lon: acc.lon + a.coords.lon }), { lat: 0, lon: 0 });
-  return { lat: sum.lat / group.length, lon: sum.lon / group.length };
+function normalizeStreetName(text) {
+  const match = text.match(/^(.+?)(?:,|\s+)\s*\d+/i);
+  return match ? match[1].trim().toLowerCase() : text.toLowerCase();
 }
 
-function groupByCEP(targets) {
-  const groups = new Map();
-  targets.forEach(target => {
-    const cep = target.cep || '00000000';
-    if (!groups.has(cep)) groups.set(cep, []);
-    groups.get(cep).push(target);
+function groupByMicroRegion(targets) {
+  const groups = [];
+  let currentGroup = [];
+  let lastCepPrefix = null;
+  let lastStreet = null;
+
+  targets.forEach(addr => {
+    const cepPrefix = addr.cep ? addr.cep.substring(0, 6) : "000000";
+    const street = normalizeStreetName(addr.text);
+
+    if (currentGroup.length === 0 ||
+        cepPrefix === lastCepPrefix ||
+        (street && lastStreet && street.includes(lastStreet)) ||
+        currentGroup.length < 5) {
+      currentGroup.push(addr);
+    } else {
+      groups.push(currentGroup);
+      currentGroup = [addr];
+    }
+    lastCepPrefix = cepPrefix;
+    lastStreet = street;
   });
-  return Array.from(groups.values());
+
+  if (currentGroup.length > 0) groups.push(currentGroup);
+  return groups;
 }
 
-async function precomputeDistances(targets) {
-  for (let i = 0; i < targets.length; i++) {
-    for (let j = i + 1; j < targets.length; j++) {
-      const from = targets[i].coords;
-      const to = targets[j].coords;
-      const key = getCacheKey(from.lat, from.lon, to.lat, to.lon);
-      if (!distanceCache.has(key)) {
-        await calculateRealDistance(from, to);
-      }
-    }
-  }
-}
-
-async function optimizeNearestNeighbor(start, targets) {
-  if (targets.length === 0) return [];
-  const route = [];
-  let currentPos = start.coords;
-  let remaining = [...targets];
-  while (remaining.length > 0) {
-    let nearestIdx = 0;
-    let nearestDist = Infinity;
-    for (let i = 0; i < remaining.length; i++) {
-      const targetCoords = remaining[i].coords;
-      const key = getCacheKey(currentPos.lat, currentPos.lon, targetCoords.lat, targetCoords.lon);
-      let distance;
-      if (distanceCache.has(key)) {
-        distance = distanceCache.get(key).distance;
-      } else {
-        distance = haversineDistance(currentPos, targetCoords);
-      }
-      if (distance < nearestDist) {
-        nearestDist = distance;
-        nearestIdx = i;
-      }
-    }
-    const nextPoint = remaining.splice(nearestIdx, 1)[0];
-    route.push(nextPoint);
-    currentPos = nextPoint.coords;
-  }
-  return route;
+function estimateDirection(prev, curr) {
+  if (!prev || prev === 0) return 1;
+  return curr > prev ? 1 : -1;
 }
 
 async function optimizeRouteSmart(start, targets) {
   if (targets.length === 0) return [];
-  const validTargets = targets.filter(t => t.coords && typeof t.coords.lat === 'number' && typeof t.coords.lon === 'number');
-  validTargets.sort((a, b) => {
-    const cepA = parseInt(a.cep || '0', 10);
-    const cepB = parseInt(b.cep || '0', 10);
-    if (cepA !== cepB) return cepA - cepB;
-    const ruaA = (a.text.match(/(.+?), \d+/)?.[1] || '').toLowerCase();
-    const ruaB = (b.text.match(/(.+?), \d+/)?.[1] || '').toLowerCase();
-    if (ruaA < ruaB) return -1;
-    if (ruaA > ruaB) return 1;
-    return (a.number || 0) - (b.number || 0);
+
+  const validTargets = targets.filter(t => t.coords?.lat && t.coords?.lon);
+
+  validTargets.forEach(item => {
+    if (!item.number) item.number = parseAddressNumber(item.text);
+    if (!item.street) item.street = normalizeStreetName(item.text);
   });
-  const cepGroups = groupByCEP(validTargets);
-  await precomputeDistances(validTargets);
-  const optimizedGroups = [];
-  for (const group of cepGroups) {
-    const optimizedGroup = await optimizeNearestNeighbor(start, group);
-    optimizedGroups.push(...optimizedGroup);
-    start = { coords: optimizedGroup[optimizedGroup.length - 1].coords };
+
+  validTargets.sort((a, b) => {
+    const cepA = parseInt(a.cep || "0");
+    const cepB = parseInt(b.cep || "0");
+    if (cepA !== cepB) return cepA - cepB;
+    if (a.street < b.street) return -1;
+    if (a.street > b.street) return 1;
+    return a.number - b.number;
+  });
+
+  const microGroups = groupByMicroRegion(validTargets);
+
+  const finalRoute = [];
+  let currentPos = start.coords;
+  let lastNumber = null;
+  let lastParity = null;
+
+  for (const group of microGroups) {
+    if (group.length <= 1) {
+      finalRoute.push(...group);
+      if (group.length === 1) currentPos = group[0].coords;
+      continue;
+    }
+
+    const odd = group.filter(a => a.number % 2 === 1 || a.number === 0);
+    const even = group.filter(a => a.number % 2 === 0 && a.number > 0);
+
+    let firstSide, secondSide;
+    if (lastParity === null) {
+      firstSide = odd.length >= even.length ? odd : even;
+      secondSide = odd.length >= even.length ? even : odd;
+    } else {
+      firstSide = lastParity % 2 === 1 ? odd : even;
+      secondSide = lastParity % 2 === 1 ? even : odd;
+    }
+
+    const direction = estimateDirection(lastNumber, firstSide[0]?.number || 0);
+
+    firstSide.sort((a, b) => direction > 0 ? a.number - b.number : b.number - a.number);
+    secondSide.sort((a, b) => direction > 0 ? a.number - b.number : b.number - a.number);
+
+    let groupRoute = [...firstSide, ...secondSide];
+
+    if (secondSide.length > 0) {
+      const distToFirst = haversineDistance(currentPos, firstSide[0].coords);
+      const distToSecond = haversineDistance(currentPos, secondSide[0].coords);
+      if (distToSecond < distToFirst * 0.65) {
+        groupRoute = [...secondSide, ...firstSide];
+      }
+    }
+
+    finalRoute.push(...groupRoute);
+
+    currentPos = groupRoute[groupRoute.length - 1].coords;
+    lastNumber = groupRoute[groupRoute.length - 1].number;
+    lastParity = lastNumber;
   }
-  return optimizedGroups;
+
+  return finalRoute;
 }
 
 async function addAddress() {
@@ -353,8 +374,7 @@ async function addAddress() {
   showStatus('Buscando endereço...', 'info');
   const cepResult = await processCEP(text);
   if (cepResult?.success) {
-    const numMatch = cepResult.address.match(/, (\d+)/);
-    const houseNumber = numMatch ? parseInt(numMatch[1]) : 0;
+    const houseNumber = parseAddressNumber(cepResult.address);
     addresses.push({ id: Date.now(), text: cepResult.address, coords: cepResult.coords, cep: cepResult.cep, number: houseNumber, completed: false });
     input.value = '';
     renderAddressList();
@@ -365,7 +385,8 @@ async function addAddress() {
   const fullQuery = `${text}, ${userLocation.city}, ${userLocation.state}, Brasil`;
   const coords = await geocodeBasic(fullQuery);
   if (coords) {
-    addresses.push({ id: Date.now(), text: text, coords: coords, completed: false });
+    const houseNumber = parseAddressNumber(text);
+    addresses.push({ id: Date.now(), text: text, coords: coords, number: houseNumber, completed: false });
     input.value = '';
     renderAddressList();
     document.getElementById('optimize-btn').style.display = 'block';
@@ -412,8 +433,7 @@ function selectSuggestion(index) {
   let displayText = `${addr.road || ''}${addr.house_number ? ', ' + addr.house_number : ''}, ${addr.suburb || ''}, ${addr.city || ''}`;
   const cepMatch = result.display_name.match(/\d{5}-?\d{3}/);
   const extractedCep = cepMatch ? cepMatch[0].replace("-", "") : "99999999";
-  const numMatch = displayText.match(/, (\d+)/);
-  const houseNumber = numMatch ? parseInt(numMatch[1]) : 0;
+  const houseNumber = parseAddressNumber(displayText);
   addresses.push({ id: Date.now(), text: displayText, coords: { lat: parseFloat(result.lat), lon: parseFloat(result.lon) }, cep: extractedCep, number: houseNumber, completed: false });
   document.getElementById('address-input').value = '';
   renderAddressList();
@@ -596,6 +616,7 @@ function editAddress(id) {
     if (coords) {
       addr.text = newText.trim();
       addr.coords = coords;
+      addr.number = parseAddressNumber(newText);
       renderAddressList();
       showStatus('Atualizado!', 'success');
     } else {
