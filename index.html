@@ -259,69 +259,27 @@ function parseAddressNumber(text) {
   return match ? parseInt(match[1], 10) : 0;
 }
 
-function extractStreetName(text) {
-  const match = text.match(/^(.+?)(?:,|\s+)\s*\d+/i);
-  return match ? match[1].trim().toLowerCase() : text.toLowerCase();
-}
-
-function groupByStreet(targets) {
-  const streets = new Map();
-  targets.forEach(target => {
-    const streetName = extractStreetName(target.text);
-    if (!streets.has(streetName)) {
-      streets.set(streetName, []);
-    }
-    streets.get(streetName).push(target);
-  });
-  return streets;
-}
-
-function calculateStreetCenter(streetAddresses) {
-  const sum = streetAddresses.reduce((acc, a) => ({ lat: acc.lat + a.coords.lat, lon: acc.lon + a.coords.lon }), { lat: 0, lon: 0 });
-  return { lat: sum.lat / streetAddresses.length, lon: sum.lon / streetAddresses.length };
-}
-
-async function optimizeRouteByStreets(start, targets) {
+async function optimizeRouteByNearestNeighbor(start, targets) {
   if (targets.length === 0) return [];
 
   const validTargets = targets.filter(t => t.coords?.lat && t.coords?.lon);
 
-  validTargets.forEach(item => {
-    if (!item.number) item.number = parseAddressNumber(item.text);
-  });
-
-  // 1. Agrupar por rua
-  const streetsMap = groupByStreet(validTargets);
-
-  // 2. Ordenar endereços dentro de cada rua
-  streetsMap.forEach((addresses, streetName) => {
-    addresses.sort((a, b) => a.number - b.number);
-  });
-
-  // 3. Criar lista de ruas com seu ponto central
-  const streetClusters = Array.from(streetsMap.entries()).map(([streetName, addresses]) => ({
-    streetName,
-    addresses,
-    center: calculateStreetCenter(addresses)
-  }));
-
-  // 4. Otimizar a ordem das ruas usando vizinho mais próximo
-  const finalRoute = [];
+  const route = [];
   let currentPos = start.coords;
-  let remainingStreets = [...streetClusters];
+  let remaining = [...validTargets];
 
-  while (remainingStreets.length > 0) {
+  while (remaining.length > 0) {
     let nearestIdx = 0;
     let nearestDist = Infinity;
 
-    for (let i = 0; i < remainingStreets.length; i++) {
-      const streetCenter = remainingStreets[i].center;
-      const key = getCacheKey(currentPos.lat, currentPos.lon, streetCenter.lat, streetCenter.lon);
+    for (let i = 0; i < remaining.length; i++) {
+      const targetCoords = remaining[i].coords;
+      const key = getCacheKey(currentPos.lat, currentPos.lon, targetCoords.lat, targetCoords.lon);
       let distance;
       if (distanceCache.has(key)) {
         distance = distanceCache.get(key).distance;
       } else {
-        distance = haversineDistance(currentPos, streetCenter);
+        distance = haversineDistance(currentPos, targetCoords);
       }
       if (distance < nearestDist) {
         nearestDist = distance;
@@ -329,12 +287,12 @@ async function optimizeRouteByStreets(start, targets) {
       }
     }
 
-    const nextStreet = remainingStreets.splice(nearestIdx, 1)[0];
-    finalRoute.push(...nextStreet.addresses);
-    currentPos = nextStreet.addresses[nextStreet.addresses.length - 1].coords;
+    const nextPoint = remaining.splice(nearestIdx, 1)[0];
+    route.push(nextPoint);
+    currentPos = nextPoint.coords;
   }
 
-  return finalRoute;
+  return route;
 }
 
 async function addAddress() {
@@ -474,7 +432,7 @@ async function searchAndSelectDeparture(query) {
   try {
     const cityState = `${userLocation.city}, ${userLocation.state}, Brasil`;
     const fullQuery = `${query}, ${cityState}`;
-    const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`, {
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json?q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`, {
       headers: { 'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)' }
     });
     const results = await resp.json();
@@ -544,7 +502,7 @@ async function optimizeRoute() {
     }
     if (destinosValidos.length === 0) return showStatus('Nenhum destino válido.', 'warning');
     showStatus('Calculando melhor rota...', 'info');
-    const optimized = await optimizeRouteByStreets(departure, destinosValidos);
+    const optimized = await optimizeRouteByNearestNeighbor(departure, destinosValidos);
     optimizedRoute = [{ ...departure, completed: true }, ...optimized];
     activeIndex = 1;
     document.getElementById('add-section').style.display = 'none';
