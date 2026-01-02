@@ -259,70 +259,79 @@ function parseAddressNumber(text) {
   return match ? parseInt(match[1], 10) : 0;
 }
 
-function normalizeStreetName(text) {
+function extractStreetName(text) {
   const match = text.match(/^(.+?)(?:,|\s+)\s*\d+/i);
   return match ? match[1].trim().toLowerCase() : text.toLowerCase();
 }
 
-async function optimizeRouteSmart(start, targets) {
+function groupByStreet(targets) {
+  const streets = new Map();
+  targets.forEach(target => {
+    const streetName = extractStreetName(target.text);
+    if (!streets.has(streetName)) {
+      streets.set(streetName, []);
+    }
+    streets.get(streetName).push(target);
+  });
+  return streets;
+}
+
+function calculateStreetCenter(streetAddresses) {
+  const sum = streetAddresses.reduce((acc, a) => ({ lat: acc.lat + a.coords.lat, lon: acc.lon + a.coords.lon }), { lat: 0, lon: 0 });
+  return { lat: sum.lat / streetAddresses.length, lon: sum.lon / streetAddresses.length };
+}
+
+async function optimizeRouteByStreets(start, targets) {
   if (targets.length === 0) return [];
 
   const validTargets = targets.filter(t => t.coords?.lat && t.coords?.lon);
 
   validTargets.forEach(item => {
     if (!item.number) item.number = parseAddressNumber(item.text);
-    if (!item.street) item.street = normalizeStreetName(item.text);
-    item.isEven = item.number % 2 === 0;
-    item.cep = (item.cep || '00000000').replace('-', '');
   });
 
-  validTargets.sort((a, b) => {
-    if (a.cep !== b.cep) return parseInt(a.cep) - parseInt(b.cep);
-    if (a.street < b.street) return -1;
-    if (a.street > b.street) return 1;
-    if (a.isEven && b.isEven) return a.number - b.number;
-    if (!a.isEven && !b.isEven) return b.number - a.number;
-    return 0;
+  // 1. Agrupar por rua
+  const streetsMap = groupByStreet(validTargets);
+
+  // 2. Ordenar endereços dentro de cada rua
+  streetsMap.forEach((addresses, streetName) => {
+    addresses.sort((a, b) => a.number - b.number);
   });
 
-  const groups = [];
-  let currentGroup = [validTargets[0]];
-  for (let i = 1; i < validTargets.length; i++) {
-    if (validTargets[i].cep === currentGroup[0].cep) {
-      currentGroup.push(validTargets[i]);
-    } else {
-      groups.push(currentGroup);
-      currentGroup = [validTargets[i]];
-    }
-  }
-  groups.push(currentGroup);
+  // 3. Criar lista de ruas com seu ponto central
+  const streetClusters = Array.from(streetsMap.entries()).map(([streetName, addresses]) => ({
+    streetName,
+    addresses,
+    center: calculateStreetCenter(addresses)
+  }));
 
-  const finalRoute = [start];
+  // 4. Otimizar a ordem das ruas usando vizinho mais próximo
+  const finalRoute = [];
   let currentPos = start.coords;
-  let lastNumber = start.number || 0;
-  let lastIsEven = typeof start.number === 'number' ? start.number % 2 === 0 : null;
+  let remainingStreets = [...streetClusters];
 
-  for (const group of groups) {
-    group.sort((a, b) => {
-      if (lastIsEven !== null) {
-        if (lastIsEven) {
-          if (a.isEven && b.isEven) return a.number - b.number;
-          if (!a.isEven && !b.isEven) return b.number - a.number;
-          return -1;
-        } else {
-          if (!a.isEven && !b.isEven) return b.number - a.number;
-          if (a.isEven && b.isEven) return a.number - b.number;
-          return 1;
-        }
+  while (remainingStreets.length > 0) {
+    let nearestIdx = 0;
+    let nearestDist = Infinity;
+
+    for (let i = 0; i < remainingStreets.length; i++) {
+      const streetCenter = remainingStreets[i].center;
+      const key = getCacheKey(currentPos.lat, currentPos.lon, streetCenter.lat, streetCenter.lon);
+      let distance;
+      if (distanceCache.has(key)) {
+        distance = distanceCache.get(key).distance;
+      } else {
+        distance = haversineDistance(currentPos, streetCenter);
       }
-      return 0;
-    });
-
-    finalRoute.push(...group);
-    if (group.length > 0) {
-      lastNumber = group[group.length - 1].number;
-      lastIsEven = group[group.length - 1].isEven;
+      if (distance < nearestDist) {
+        nearestDist = distance;
+        nearestIdx = i;
+      }
     }
+
+    const nextStreet = remainingStreets.splice(nearestIdx, 1)[0];
+    finalRoute.push(...nextStreet.addresses);
+    currentPos = nextStreet.addresses[nextStreet.addresses.length - 1].coords;
   }
 
   return finalRoute;
@@ -535,7 +544,7 @@ async function optimizeRoute() {
     }
     if (destinosValidos.length === 0) return showStatus('Nenhum destino válido.', 'warning');
     showStatus('Calculando melhor rota...', 'info');
-    const optimized = await optimizeRouteSmart(departure, destinosValidos);
+    const optimized = await optimizeRouteByStreets(departure, destinosValidos);
     optimizedRoute = [{ ...departure, completed: true }, ...optimized];
     activeIndex = 1;
     document.getElementById('add-section').style.display = 'none';
