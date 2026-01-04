@@ -259,37 +259,63 @@ function parseAddressNumber(text) {
   return match ? parseInt(match[1], 10) : 0;
 }
 
-async function optimizeRouteByNearestNeighbor(start, targets) {
+function normalizeStreetName(text) {
+  const match = text.match(/^(.+?)(?:,|\s+)\s*\d+/i);
+  return match ? match[1].trim().toLowerCase() : text.toLowerCase();
+}
+
+async function optimizeRouteSmart(start, targets) {
   if (targets.length === 0) return [];
 
   const validTargets = targets.filter(t => t.coords?.lat && t.coords?.lon);
+  if (validTargets.length === 0) return [];
 
-  const route = [];
+  validTargets.forEach(item => {
+    if (!item.number) item.number = parseAddressNumber(item.text);
+    if (!item.street) item.street = normalizeStreetName(item.text);
+    item.isEven = item.number % 2 === 0;
+    item.cep = (item.cep || '00000000').replace('-', '');
+  });
+
+  const cepGroups = {};
+  validTargets.forEach(item => {
+    if (!cepGroups[item.cep]) cepGroups[item.cep] = [];
+    cepGroups[item.cep].push(item);
+  });
+
+  const sortedCeps = Object.keys(cepGroups).sort((a, b) => parseInt(a) - parseInt(b));
+
+  const optimizedGroups = [];
+  for (const cep of sortedCeps) {
+    const group = cepGroups[cep];
+    group.sort((a, b) => {
+      if (a.street < b.street) return -1;
+      if (a.street > b.street) return 1;
+      if (a.isEven && b.isEven) return a.number - b.number;
+      if (!a.isEven && !b.isEven) return b.number - a.number;
+      return a.isEven ? -1 : 1;
+    });
+    optimizedGroups.push(...group);
+  }
+
+  const route = [start];
   let currentPos = start.coords;
-  let remaining = [...validTargets];
 
-  while (remaining.length > 0) {
-    let nearestIdx = 0;
-    let nearestDist = Infinity;
+  while (optimizedGroups.length > 0) {
+    let closestIndex = 0;
+    let minDistance = Infinity;
 
-    for (let i = 0; i < remaining.length; i++) {
-      const targetCoords = remaining[i].coords;
-      const key = getCacheKey(currentPos.lat, currentPos.lon, targetCoords.lat, targetCoords.lon);
-      let distance;
-      if (distanceCache.has(key)) {
-        distance = distanceCache.get(key).distance;
-      } else {
-        distance = haversineDistance(currentPos, targetCoords);
-      }
-      if (distance < nearestDist) {
-        nearestDist = distance;
-        nearestIdx = i;
+    for (let i = 0; i < optimizedGroups.length; i++) {
+      const { distance } = await calculateRealDistance(currentPos, optimizedGroups[i].coords);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
       }
     }
 
-    const nextPoint = remaining.splice(nearestIdx, 1)[0];
-    route.push(nextPoint);
-    currentPos = nextPoint.coords;
+    route.push(optimizedGroups[closestIndex]);
+    currentPos = optimizedGroups[closestIndex].coords;
+    optimizedGroups.splice(closestIndex, 1);
   }
 
   return route;
@@ -432,7 +458,7 @@ async function searchAndSelectDeparture(query) {
   try {
     const cityState = `${userLocation.city}, ${userLocation.state}, Brasil`;
     const fullQuery = `${query}, ${cityState}`;
-    const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json?q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`, {
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(fullQuery)}&limit=5&addressdetails=1&accept-language=pt-BR`, {
       headers: { 'User-Agent': 'RouteOptimizerApp/1.0 (entregador.gratuito.app)' }
     });
     const results = await resp.json();
@@ -502,7 +528,7 @@ async function optimizeRoute() {
     }
     if (destinosValidos.length === 0) return showStatus('Nenhum destino válido.', 'warning');
     showStatus('Calculando melhor rota...', 'info');
-    const optimized = await optimizeRouteByNearestNeighbor(departure, destinosValidos);
+    const optimized = await optimizeRouteSmart(departure, destinosValidos);
     optimizedRoute = [{ ...departure, completed: true }, ...optimized];
     activeIndex = 1;
     document.getElementById('add-section').style.display = 'none';
@@ -714,7 +740,7 @@ async function captureImage() {
 }
 
 function handleScannedCode(code) { document.getElementById('address-input').value = code; addAddress(); }
-function addUserLocationManually() { showStatus('Use o botão em “Ponto de Partida”.', 'info'); }
+function addUserLocationManually() { showStatus('Use o botão em "Ponto de Partida".', 'info'); }
 function showStatus(message, type = 'info') {
   const c = document.getElementById('status-container');
   const cls = type === 'success' ? 'status-success' : type === 'warning' ? 'status-warning' : 'status-info';
