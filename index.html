@@ -277,6 +277,7 @@ async function optimizeRouteSmart(start, targets) {
     item.cep = (item.cep || '00000000').replace('-', '');
   });
 
+  // 1. Agrupa por CEP (ordem crescente)
   const cepGroups = {};
   validTargets.forEach(item => {
     if (!cepGroups[item.cep]) cepGroups[item.cep] = [];
@@ -285,19 +286,63 @@ async function optimizeRouteSmart(start, targets) {
 
   const sortedCeps = Object.keys(cepGroups).sort((a, b) => parseInt(a) - parseInt(b));
 
+  // 2. Para cada CEP, agrupa por rua
   const optimizedGroups = [];
   for (const cep of sortedCeps) {
     const group = cepGroups[cep];
-    group.sort((a, b) => {
-      if (a.street < b.street) return -1;
-      if (a.street > b.street) return 1;
-      if (a.isEven && b.isEven) return a.number - b.number;
-      if (!a.isEven && !b.isEven) return b.number - a.number;
-      return a.isEven ? -1 : 1;
+    const streetGroups = {};
+
+    group.forEach(item => {
+      if (!streetGroups[item.street]) streetGroups[item.street] = [];
+      streetGroups[item.street].push(item);
     });
-    optimizedGroups.push(...group);
+
+    // 3. Ordena as ruas por proximidade ao ponto de partida
+    const streets = Object.keys(streetGroups);
+    const streetDistances = await Promise.all(
+      streets.map(async street => {
+        const firstAddress = streetGroups[street][0];
+        const { distance } = await calculateRealDistance(start.coords, firstAddress.coords);
+        return { street, distance };
+      })
+    );
+
+    streetDistances.sort((a, b) => a.distance - b.distance);
+
+    // 4. Para cada rua, ordena os números pela distância física
+    for (const { street } of streetDistances) {
+      const addressesInStreet = streetGroups[street];
+      if (addressesInStreet.length === 1) {
+        optimizedGroups.push(addressesInStreet[0]);
+        continue;
+      }
+
+      // Ordena os endereços pela distância física entre eles
+      const sortedAddresses = [addressesInStreet[0]];
+      const remainingAddresses = addressesInStreet.slice(1);
+
+      while (remainingAddresses.length > 0) {
+        const lastAddress = sortedAddresses[sortedAddresses.length - 1];
+        let closestIndex = 0;
+        let minDistance = Infinity;
+
+        for (let i = 0; i < remainingAddresses.length; i++) {
+          const { distance } = await calculateRealDistance(lastAddress.coords, remainingAddresses[i].coords);
+          if (distance < minDistance) {
+            minDistance = distance;
+            closestIndex = i;
+          }
+        }
+
+        sortedAddresses.push(remainingAddresses[closestIndex]);
+        remainingAddresses.splice(closestIndex, 1);
+      }
+
+      optimizedGroups.push(...sortedAddresses);
+    }
   }
 
+  // 5. Ordena todos os endereços pela distância do ponto de partida
   const route = [start];
   let currentPos = start.coords;
 
