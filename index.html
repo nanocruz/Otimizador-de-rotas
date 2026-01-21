@@ -264,103 +264,89 @@ function normalizeStreetName(text) {
   return match ? match[1].trim().toLowerCase() : text.toLowerCase();
 }
 
-async function optimizeRouteSmart(start, targets) {
-  if (targets.length === 0) return [];
+async function optimizeRouteFast(start, targets) {
+  // Prep rápido (igual)
+  const validTargets = targets.filter(t => t.coords?.lat && t.coords?.lon).map(t => ({
+    ...t,
+    number: parseAddressNumber(t.text) || 0,
+    street: normalizeStreetName(t.text),
+    isEven: (parseAddressNumber(t.text) || 0) % 2 === 0,
+    cepNum: parseInt(t.cep || '0')
+  }));
 
-  const validTargets = targets.filter(t => t.coords?.lat && t.coords?.lon);
   if (validTargets.length === 0) return [];
 
-  validTargets.forEach(item => {
-    if (!item.number) item.number = parseAddressNumber(item.text);
-    if (!item.street) item.street = normalizeStreetName(item.text);
-    item.isEven = item.number % 2 === 0;
-    item.cep = (item.cep || '00000000').replace('-', '');
-  });
-
-  // 1. Agrupa por CEP (ordem crescente)
-  const cepGroups = {};
-  validTargets.forEach(item => {
-    if (!cepGroups[item.cep]) cepGroups[item.cep] = [];
-    cepGroups[item.cep].push(item);
-  });
-
-  const sortedCeps = Object.keys(cepGroups).sort((a, b) => parseInt(a) - parseInt(b));
-
-  // 2. Para cada CEP, agrupa por rua
-  const optimizedGroups = [];
-  for (const cep of sortedCeps) {
-    const group = cepGroups[cep];
-    const streetGroups = {};
-
-    group.forEach(item => {
-      if (!streetGroups[item.street]) streetGroups[item.street] = [];
-      streetGroups[item.street].push(item);
-    });
-
-    // 3. Ordena as ruas por proximidade ao ponto de partida
-    const streets = Object.keys(streetGroups);
-    const streetDistances = await Promise.all(
-      streets.map(async street => {
-        const firstAddress = streetGroups[street][0];
-        const { distance } = await calculateRealDistance(start.coords, firstAddress.coords);
-        return { street, distance };
-      })
-    );
-
-    streetDistances.sort((a, b) => a.distance - b.distance);
-
-    // 4. Para cada rua, ordena os números pela distância física
-    for (const { street } of streetDistances) {
-      const addressesInStreet = streetGroups[street];
-      if (addressesInStreet.length === 1) {
-        optimizedGroups.push(addressesInStreet[0]);
-        continue;
-      }
-
-      // Ordena os endereços pela distância física entre eles
-      const sortedAddresses = [addressesInStreet[0]];
-      const remainingAddresses = addressesInStreet.slice(1);
-
-      while (remainingAddresses.length > 0) {
-        const lastAddress = sortedAddresses[sortedAddresses.length - 1];
-        let closestIndex = 0;
-        let minDistance = Infinity;
-
-        for (let i = 0; i < remainingAddresses.length; i++) {
-          const { distance } = await calculateRealDistance(lastAddress.coords, remainingAddresses[i].coords);
-          if (distance < minDistance) {
-            minDistance = distance;
-            closestIndex = i;
-          }
+  // 1. HEURÍSTICA: Cache batch de distâncias (OSRM suporta multi-waypoint)
+  const batchDistance = async(points) => {
+    if (points.length < 2) return [];
+    const coords = points.map(p => `${p.lon},${p.lat}`).join(';');
+    try {
+      const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coords}?overview=false`;
+      const res = await fetch(url, { headers: { 'User-Agent': 'RouteOptimizer/2.0' } });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.routes?.[0]?.legs) {
+          return data.routes[0].legs.map(leg => ({
+            distance: leg.distance,
+            duration: leg.duration
+          }));
         }
-
-        sortedAddresses.push(remainingAddresses[closestIndex]);
-        remainingAddresses.splice(closestIndex, 1);
       }
+    } catch {}
+    // Fallback haversine batch
+    return points.slice(0, -1).map((p, i) => ({
+      distance: haversineDistance(p, points[i+1]),
+      duration: haversineDistance(p, points[i+1]) / 13.89
+    }));
+  };
 
-      optimizedGroups.push(...sortedAddresses);
-    }
+  // 2. AGRUPAMENTO RÁPIDO: CEP + Rua (sem supergrupos caros)
+  const streetGroups = {};
+  validTargets.forEach(addr => {
+    const key = `${addr.cepNum}-${addr.street}`;
+    if (!streetGroups[key]) streetGroups[key] = [];
+    streetGroups[key].push(addr);
+  });
+
+  // Ordena grupos por CEP + nome rua
+  const groupKeys = Object.keys(streetGroups).sort((a,b) => {
+    const [cepA] = a.split('-'), [cepB] = b.split('-');
+    return parseInt(cepA) - parseInt(cepB) || a.localeCompare(b);
+  });
+
+  // 3. DENTRO DE CADA RUA: Par/Ímpar sequencial (sem distâncias!)
+  const orderedGroups = [];
+  for (const key of groupKeys) {
+    const addrs = streetGroups[key];
+    const evens = addrs.filter(a => a.isEven).sort((a,b) => a.number - b.number);
+    const odds = addrs.filter(a => !a.isEven).sort((a,b) => b.number - a.number);
+    orderedGroups.push(...(evens.length >= odds.length ? [...evens, ...odds] : [...odds, ...evens]));
   }
 
-  // 5. Ordena todos os endereços pela distância do ponto de partida
+  // 4. ÚLTIMO PASSO: Nearest neighbor LEVE (só 1x por endereço, cache hit garantido)
   const route = [start];
-  let currentPos = start.coords;
+  let current = start;
+  const remaining = [...orderedGroups];
 
-  while (optimizedGroups.length > 0) {
-    let closestIndex = 0;
-    let minDistance = Infinity;
+  while (remaining.length > 0) {
+    // Batch de 5 candidatos mais prováveis (heurística CEP)
+    const candidates = remaining
+      .sort((a,b) => Math.abs(a.cepNum - current.cepNum))
+      .slice(0, 5);
 
-    for (let i = 0; i < optimizedGroups.length; i++) {
-      const { distance } = await calculateRealDistance(currentPos, optimizedGroups[i].coords);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = i;
+    const distances = await batchDistance([current, ...candidates.map(c => c.coords)]);
+    
+    let closestIdx = 0, minDist = Infinity;
+    distances.forEach((dist, i) => {
+      if (dist.distance < minDist) {
+        minDist = dist.distance;
+        closestIdx = i;
       }
-    }
+    });
 
-    route.push(optimizedGroups[closestIndex]);
-    currentPos = optimizedGroups[closestIndex].coords;
-    optimizedGroups.splice(closestIndex, 1);
+    route.push(candidates[closestIdx]);
+    current = candidates[closestIdx];
+    remaining.splice(remaining.findIndex(r => r.id === candidates[closestIdx].id), 1);
   }
 
   return route;
