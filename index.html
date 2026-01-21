@@ -264,93 +264,68 @@ function normalizeStreetName(text) {
   return match ? match[1].trim().toLowerCase() : text.toLowerCase();
 }
 
-async function optimizeRouteFast(start, targets) {
-  // Prep rápido (igual)
+function optimizeRouteUltraFast(start, targets) {
+  // Prep
   const validTargets = targets.filter(t => t.coords?.lat && t.coords?.lon).map(t => ({
     ...t,
+    streetKey: normalizeStreetName(t.text),
     number: parseAddressNumber(t.text) || 0,
-    street: normalizeStreetName(t.text),
     isEven: (parseAddressNumber(t.text) || 0) % 2 === 0,
-    cepNum: parseInt(t.cep || '0')
+    cepNum: parseInt((t.cep || '00000000').replace('-', ''))
   }));
 
-  if (validTargets.length === 0) return [];
-
-  // 1. HEURÍSTICA: Cache batch de distâncias (OSRM suporta multi-waypoint)
-  const batchDistance = async(points) => {
-    if (points.length < 2) return [];
-    const coords = points.map(p => `${p.lon},${p.lat}`).join(';');
-    try {
-      const url = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coords}?overview=false`;
-      const res = await fetch(url, { headers: { 'User-Agent': 'RouteOptimizer/2.0' } });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.routes?.[0]?.legs) {
-          return data.routes[0].legs.map(leg => ({
-            distance: leg.distance,
-            duration: leg.duration
-          }));
-        }
-      }
-    } catch {}
-    // Fallback haversine batch
-    return points.slice(0, -1).map((p, i) => ({
-      distance: haversineDistance(p, points[i+1]),
-      duration: haversineDistance(p, points[i+1]) / 13.89
-    }));
-  };
-
-  // 2. AGRUPAMENTO RÁPIDO: CEP + Rua (sem supergrupos caros)
-  const streetGroups = {};
+  // 1. HEURÍSTICA PRINCIPAL: Ordena por CEP → RUA → PAR/ÍMPAR → NÚMERO
+  const grouped = {};
+  
   validTargets.forEach(addr => {
-    const key = `${addr.cepNum}-${addr.street}`;
-    if (!streetGroups[key]) streetGroups[key] = [];
-    streetGroups[key].push(addr);
-  });
-
-  // Ordena grupos por CEP + nome rua
-  const groupKeys = Object.keys(streetGroups).sort((a,b) => {
-    const [cepA] = a.split('-'), [cepB] = b.split('-');
-    return parseInt(cepA) - parseInt(cepB) || a.localeCompare(b);
-  });
-
-  // 3. DENTRO DE CADA RUA: Par/Ímpar sequencial (sem distâncias!)
-  const orderedGroups = [];
-  for (const key of groupKeys) {
-    const addrs = streetGroups[key];
-    const evens = addrs.filter(a => a.isEven).sort((a,b) => a.number - b.number);
-    const odds = addrs.filter(a => !a.isEven).sort((a,b) => b.number - a.number);
-    orderedGroups.push(...(evens.length >= odds.length ? [...evens, ...odds] : [...odds, ...evens]));
-  }
-
-  // 4. ÚLTIMO PASSO: Nearest neighbor LEVE (só 1x por endereço, cache hit garantido)
-  const route = [start];
-  let current = start;
-  const remaining = [...orderedGroups];
-
-  while (remaining.length > 0) {
-    // Batch de 5 candidatos mais prováveis (heurística CEP)
-    const candidates = remaining
-      .sort((a,b) => Math.abs(a.cepNum - current.cepNum))
-      .slice(0, 5);
-
-    const distances = await batchDistance([current, ...candidates.map(c => c.coords)]);
+    const cepKey = addr.cepNum.toString().padStart(8, '0');
+    if (!grouped[cepKey]) grouped[cepKey] = {};
+    if (!grouped[cepKey][addr.streetKey]) grouped[cepKey][addr.streetKey] = { evens: [], odds: [] };
     
-    let closestIdx = 0, minDist = Infinity;
-    distances.forEach((dist, i) => {
-      if (dist.distance < minDist) {
-        minDist = dist.distance;
-        closestIdx = i;
+    if (addr.isEven) {
+      grouped[cepKey][addr.streetKey].evens.push(addr);
+    } else {
+      grouped[cepKey][addr.streetKey].odds.push(addr);
+    }
+  });
+
+  // Ordena TUDO deterministicamente (sem API!)
+  const orderedAddresses = [];
+  const sortedCeps = Object.keys(grouped).sort((a,b) => parseInt(a) - parseInt(b));
+  
+  sortedCeps.forEach(cep => {
+    const streets = Object.keys(grouped[cep]).sort(); // Alfabético
+    
+    streets.forEach(street => {
+      const { evens, odds } = grouped[cep][street];
+      
+      // Evens crescente, odds decrescente
+      evens.sort((a,b) => a.number - b.number);
+      odds.sort((a,b) => b.number - a.number);
+      
+      // Intercala baseado na maioria
+      if (evens.length >= odds.length) {
+        orderedAddresses.push(...evens, ...odds);
+      } else {
+        orderedAddresses.push(...odds, ...evens);
       }
     });
+  });
 
-    route.push(candidates[closestIdx]);
-    current = candidates[closestIdx];
-    remaining.splice(remaining.findIndex(r => r.id === candidates[closestIdx].id), 1);
-  }
-
-  return route;
+  // 2. ÚNICO CÁLCULO: Posição inicial mais próxima (haversine batch 1x)
+  if (orderedAddresses.length === 0) return [];
+  
+  const distances = orderedAddresses.map(addr => 
+    haversineDistance(start.coords, addr.coords)
+  );
+  
+  // Move o mais próximo pro início
+  const minIdx = distances.indexOf(Math.min(...distances));
+  const firstMatch = orderedAddresses.splice(minIdx, 1)[0];
+  
+  return [start, firstMatch, ...orderedAddresses];
 }
+
 
 async function addAddress() {
   if (!userLocation) return showStatus('Defina a localização base primeiro.', 'warning');
